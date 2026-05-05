@@ -30,6 +30,10 @@ class GetSerieInfo:
         self.year = year
         self.seasons_manager = SeasonManager()
         self.provider_language = provider_language
+        if isinstance(self.url, str) and self.url.endswith(('/it', '/en')):
+            self.base_url = self.url.rsplit('/', 1)[0]
+        else:
+            self.base_url = self.url
 
         if series_name is not None:
             self.is_series = True
@@ -91,27 +95,87 @@ class GetSerieInfo:
                 logger.error(f"Season {number_season} not found")
                 return
 
-            custom_headers = self.headers.copy()
-            custom_headers.update({
-                'x-inertia': 'true',
-                'x-inertia-version': self.version,
-            })
-            client = create_client(headers=custom_headers)
-            response = client.get(f"{self.url}/titles/{self.media_id}-{self.series_name}/season-{number_season}")
-            client.close()
+            # We'll aggregate episodes from both Italian and English catalogs
+            episodes_by_lang = {}
 
-            # Extract episodes from JSON response
-            json_response = response.json().get('props', {}).get('loadedSeason', {}).get('episodes', [])
-                
-            # Add each episode to the corresponding season's episode manager
-            for ep in json_response:
-                season.episodes.add(Episode(
-                    id=ep.get('id'),
-                    video_id=ep.get('id'),
-                    number=ep.get('number'),
-                    name=ep.get('name'),
-                    duration=ep.get('duration')
-                ))
+            # Determine if this is the last season -> only then attach language info
+            try:
+                last_season_number = max([s.number for s in self.seasons_manager.seasons])
+            except Exception:
+                last_season_number = number_season
+
+            include_language = (number_season == last_season_number)
+
+            for lang in ['it', 'en']:
+                try:
+                    logger.info(f"Fetching episodes for season {number_season} in language '{lang}'")
+                    client = create_client(headers=self.headers)
+                    resp_ver = client.get(f"{self.base_url}/{lang}")
+                    resp_ver.raise_for_status()
+                    ver = BeautifulSoup(resp_ver.text, "html.parser")
+                    ver = json.loads(ver.find("div", {"id": "app"}).get("data-page"))['version']
+                    client.close()
+                except Exception:
+                    # Skip this language if we can't get version
+                    continue
+
+                custom_headers = self.headers.copy()
+                custom_headers.update({
+                    'x-inertia': 'true',
+                    'x-inertia-version': ver,
+                })
+                client = create_client(headers=custom_headers)
+                try:
+                    response = client.get(f"{self.base_url}/{lang}/titles/{self.media_id}-{self.series_name}/season-{number_season}")
+                    response.raise_for_status()
+                    json_response = response.json().get('props', {}).get('loadedSeason', {}).get('episodes', [])
+                except Exception as e:
+                    logger.debug(f"No season data for lang {lang}: {e}")
+                    json_response = []
+                finally:
+                    client.close()
+
+                episodes_by_lang[lang] = json_response
+
+            # Merge episodes from both languages
+            def _merge_and_add(ep_lists_by_lang: dict, season_obj: Season, attach_language: bool = False):
+                logger.info(f"Merging episodes for season {season_obj.number} with language attachment: {attach_language}")
+                merged = {}
+                for lang, ep_list in ep_lists_by_lang.items():
+                    for ep in ep_list:
+                        num = ep.get('number')
+                        if num is None:
+                            # fallback to id if number missing
+                            num = ep.get('id')
+
+                        if num in merged:
+                            # already exists from other language -> mark both
+                            existing = merged[num]
+                            if attach_language:
+                                prev_lang = getattr(existing, 'language', None)
+                                if prev_lang:
+                                    # combine languages uniquely
+                                    langs = set(str(prev_lang).split(',')) | {lang}
+                                    existing.language = ','.join(sorted(langs))
+                        else:
+                            kwargs = {}
+                            if attach_language:
+                                kwargs['language'] = lang
+
+                            merged[num] = Episode(
+                                id=ep.get('id'),
+                                video_id=ep.get('id'),
+                                number=ep.get('number'),
+                                name=ep.get('name'),
+                                duration=ep.get('duration'),
+                                **kwargs
+                            )
+
+                # Add episodes to season in order
+                for key in sorted(merged.keys()):
+                    season_obj.episodes.add(merged[key])
+
+            _merge_and_add(episodes_by_lang, season, include_language)
 
         except Exception as e:
             logger.error(f"Error collecting episodes for season {number_season}: {e}")
