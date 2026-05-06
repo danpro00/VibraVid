@@ -29,9 +29,32 @@
       <!-- Filter Controls -->
       <div class="mt-4 ml-14">
         <div class="inline-flex rounded-md bg-black/30 p-1">
-          <button id="filter-all" onclick="filterResults('all')" class="px-3 py-1 text-sm font-semibold text-white">Tutti</button>
-          <button id="filter-movies" onclick="filterResults('movie')" class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white">Film</button>
-          <button id="filter-series" onclick="filterResults('series')" class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white">Serie</button>
+          <button 
+            id="filter-all" 
+            type="button"
+            onclick="filterResults('all')" 
+            class="px-3 py-1 text-sm font-semibold text-white"
+          >
+            Tutti
+          </button>
+
+          <button 
+            id="filter-movies" 
+            type="button"
+            onclick="filterResults('movie')" 
+            class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white"
+          >
+            Film
+          </button>
+
+          <button 
+            id="filter-series" 
+            type="button"
+            onclick="filterResults('series')" 
+            class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white"
+          >
+            Serie
+          </button>
         </div>
       </div>
     </div>
@@ -41,9 +64,26 @@
   {% if results %}
   <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 3xl:grid-cols-8 gap-3 sm:gap-4">
     {% for result in results %}
-    <div class="group relative card-hover cursor-pointer" data-type="{% if result.is_movie %}movie{% else %}series{% endif %}" 
-         data-name="{{ result.display_title }}" data-year="{{ result.year }}" data-is-movie="{{ result.is_movie|lower }}" data-source="{{ result.source_alias }}"
-         data-has-tmdb="{{ result.has_tmdb_potential|lower }}">
+
+    <div 
+      class="group relative card-hover cursor-pointer" 
+      data-type="{% if result.is_movie %}movie{% else %}series{% endif %}" 
+      data-name="{{ result.display_title }}" 
+      data-year="{{ result.year }}" 
+      data-is-movie="{{ result.is_movie|lower }}" 
+      data-source="{{ result.source_alias }}"
+      data-has-tmdb="{{ result.has_tmdb_potential|lower }}"
+
+      {% if result.is_movie %}
+        data-action-type="download"
+        data-form-id="download-form-{{ forloop.counter }}"
+      {% else %}
+        data-action-type="details"
+        data-detail-url="{% url 'series_detail' %}?source_alias={{ result.source_alias }}&item_payload={{ result.payload_json|urlencode }}"
+      {% endif %}
+
+      onclick="handleCardClick(event, this)"
+    >
 
       <!-- Card Container -->
       <div class="relative aspect-[2/3] rounded-lg overflow-hidden bg-gray-900">
@@ -83,7 +123,12 @@
             {% if result.is_movie %}
 
             <!-- Download Movie Button -->
-            <form action="{% url 'start_download' %}" method="post" class="flex-1">
+            <form 
+              id="download-form-{{ forloop.counter }}"
+              action="{% url 'start_download' %}" 
+              method="post" 
+              class="flex-1"
+            >
               {% csrf_token %}
               <input type="hidden" name="source_alias" value="{{ result.source_alias }}">
               <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
@@ -224,14 +269,52 @@
     ['filter-all','filter-movies','filter-series'].forEach(id => {
       const btn = document.getElementById(id);
       if (!btn) return;
-      if ((filter === 'all' && id === 'filter-all') || (filter === 'movie' && id === 'filter-movies') || (filter === 'series' && id === 'filter-series')) {
-        btn.classList.remove('text-gray-300','font-medium');
-        btn.classList.add('text-white','font-semibold');
+
+      const isActive =
+        (filter === 'all' && id === 'filter-all') ||
+        (filter === 'movie' && id === 'filter-movies') ||
+        (filter === 'series' && id === 'filter-series');
+
+      if (isActive) {
+        btn.classList.remove('text-gray-300', 'font-medium');
+        btn.classList.add('text-white', 'font-semibold');
       } else {
-        btn.classList.remove('text-white','font-semibold');
-        btn.classList.add('text-gray-300','font-medium');
+        btn.classList.remove('text-white', 'font-semibold');
+        btn.classList.add('text-gray-300', 'font-medium');
       }
     });
+  }
+
+  function handleCardClick(event, card) {
+    // Evita che il click sui bottoni, link o form venga intercettato dalla card
+    if (
+      event.target.closest('button') ||
+      event.target.closest('a') ||
+      event.target.closest('form')
+    ) {
+      return;
+    }
+
+    const actionType = card.dataset.actionType;
+
+    if (actionType === 'download') {
+      const formId = card.dataset.formId;
+      const form = document.getElementById(formId);
+
+      if (form) {
+        form.submit();
+      }
+
+      return;
+    }
+
+    if (actionType === 'details') {
+      const detailUrl = card.dataset.detailUrl;
+
+      if (detailUrl) {
+        window.location.href = detailUrl;
+      }
+    }
   }
 
   document.addEventListener('DOMContentLoaded', () => {
