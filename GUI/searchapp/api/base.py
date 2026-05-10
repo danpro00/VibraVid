@@ -33,6 +33,7 @@ class Episode:
     number: int
     name: str
     id: Optional[Any] = None
+    language: Optional[str] = None
 
 
 @dataclass
