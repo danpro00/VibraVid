@@ -2,13 +2,14 @@
 
 import logging
 from typing import Optional
-from urllib.parse import urlparse
 
 from rich.console import Console
 
 from VibraVid.utils import config_manager
-from VibraVid.utils.vault import supa_vault, lab_vault, claudio_vault
+from VibraVid.utils.vault._url_utils import clean_license_url
+from VibraVid.utils.vault import supa_vault, lab_vault
 from VibraVid.core.decryptor import KeysManager
+from VibraVid.setup import binary_paths
 
 from .playready import get_playready_keys
 from .widevine import get_widevine_keys
@@ -21,7 +22,6 @@ USE_CDM = config_manager.config.get_bool("DRM", "use_cdm")
 
 class DRMManager:
     _VAULT_REGISTRY = [
-        ("claudio", claudio_vault),
         ("lab",     lab_vault),
         ("supa",    supa_vault),
     ]
@@ -34,13 +34,6 @@ class DRMManager:
         self.playready_remote_cdm_api = playready_remote_cdm_api
         self.prefer_remote_cdm = prefer_remote_cdm
         self._vaults: list[tuple[str, object]] = [(name, obj) for name, obj in self._VAULT_REGISTRY if obj is not None]
-
-    def _clean_license_url(self, license_url: str) -> str:
-        """Strip query params / fragments from a license URL."""
-        if not license_url:
-            return ""
-        parsed = urlparse(license_url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
 
     def _missing_kids(self, all_kids: list[str], found_keys: list[str]) -> list[str]:
         """Return list of KIDs that are in all_kids but not yet covered by found_keys."""
@@ -113,7 +106,7 @@ class DRMManager:
                     logger.warning(msg)
                     console.print(f"[bold yellow]WARNING: {msg}[/bold yellow]")
 
-                base_license_url = self._clean_license_url(license_url) or "generic"
+                base_license_url = clean_license_url(license_url) or "generic"
                 pssh_val = next((i.get("pssh") for i in pssh_list if i.get("pssh")), None)
                 kid_to_label = {
                     i["kid"].replace("-", "").strip().lower(): i["label"]
@@ -124,7 +117,7 @@ class DRMManager:
                 self._store_keys(manual_keys, drm_type, base_license_url, pssh_val, kid_to_label, source=None)
                 return KeysManager(manual_keys)
 
-        base_license_url = self._clean_license_url(license_url)
+        base_license_url = clean_license_url(license_url)
 
         pssh_val = next((i.get("pssh") for i in pssh_list if i.get("pssh")), None)
         kid_to_label = {
@@ -203,8 +196,7 @@ class DRMManager:
 
             logger.error(f"All {drm_type} extraction methods failed")
             console.print(f"\n[red]All extraction methods failed for {drm_type}")
-            return None
-        
+            console.print(f"[yellow]Please place CDM files (.wvd for Widevine, .prd for PlayReady) in:\n  {binary_paths.get_binary_directory()}[/yellow]")
         else:
             console.print("[yellow]CDM extraction disabled by config.")
 
@@ -276,7 +268,7 @@ class DRMManager:
             console.print("[red]No valid keys to store.")
             return {}
 
-        base_license_url = self._clean_license_url(license_url) if license_url else "generic"
+        base_license_url = clean_license_url(license_url) if license_url else "generic"
         results: dict[str, int] = {}
 
         for name, vdb in self._vaults:

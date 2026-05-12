@@ -191,7 +191,7 @@ class DASH_Downloader(BaseDownloader):
             - cookies: HTTP cookies for authenticated requests.
             - max_segments: Maximum number of segments to download (for testing). Default: None (all).
         """
-        self.mpd_url = str(mpd_url).strip() if mpd_url else None
+        self.mpd_url = self._resolve_url(str(mpd_url).strip()) if mpd_url else None
         self.mpd_headers = mpd_headers or get_headers()
         self.other_tracks = [dict(track or {}) for track in (other_tracks or [])]
 
@@ -231,27 +231,10 @@ class DASH_Downloader(BaseDownloader):
             config_manager.config.get_bool("DRM", "prefer_remote_cdm"),
         )
 
-        self.download_id = context_tracker.download_id
-        self.site_name = context_tracker.site_name
-
-        if not output_path:
-            output_path = f"download.{EXTENSION_OUTPUT}"
-        self.output_path = os_manager.get_sanitize_path(output_path)
-        if not self.output_path.endswith(f".{EXTENSION_OUTPUT}"):
-            self.output_path += f".{EXTENSION_OUTPUT}"
-
-        self.filename_base = os.path.splitext(os.path.basename(self.output_path))[0]
-        self.output_dir = os.path.join(os.path.dirname(self.output_path), self.filename_base + "_dash_temp")
-        self.file_already_exists = os.path.exists(self.output_path)
+        super().__init__(output_path, "_dash_temp")
 
         self.decryption_keys = []
         self.media_downloader = None
-        self.error = None
-        self.last_merge_result = None
-        self.media_players = None
-        self.copied_subtitles = []
-        self.copied_audios = []
-        self.audio_only = False
 
     def _collect_drm_from_streams(self, streams: list, check_selected: bool = True) -> Dict[str, List[Dict]]:
         """

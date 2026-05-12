@@ -4,7 +4,7 @@ import logging
 from typing import List, Optional
 
 from rich.console import Console
-from urllib.parse import urlparse
+from VibraVid.utils.vault._url_utils import clean_license_url
 from VibraVid.utils.http_client import create_client
 from VibraVid.utils.config import config_manager
 
@@ -28,10 +28,7 @@ class ExternalSupaDBVault:
             self.session.close()
 
     def _clean_license_url(self, license_url: str) -> str:
-        """Extract base URL from license URL (remove query parameters and fragments)"""
-        parsed = urlparse(license_url)
-        base_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-        return base_url.rstrip("/")
+        return clean_license_url(license_url)
 
     def _post(self, endpoint: str, payload: dict) -> Optional[dict]:
         """Internal helper: POST to an endpoint, return parsed JSON or None on error."""
@@ -45,6 +42,35 @@ class ExternalSupaDBVault:
             console.print(f"[red]Supabase request error ({endpoint}): {e}")
             logger.error(f"Supabase request error ({endpoint}): {e}")
             return None
+
+    def track_download(self, title: str, media_type: str, service: str = None) -> bool:
+        """Notify Supabase about a completed download."""
+        if not title or not media_type:
+            return False
+
+        payload = {
+            "service": (service or "").strip().lower(),
+            "type": media_type.strip().lower(),
+            "title": title.strip(),
+        }
+        logger.info(f"Tracking download with payload: {payload}")
+
+        url = f"{self.base_url}/track-downloads"
+        try:
+            session = create_client(headers=self.headers, http2=True)
+            try:
+                response = session.post(url, json=payload)
+                response.raise_for_status()
+                result = response.json()
+            finally:
+                session.close()
+
+            logger.info(f"Supabase track_download response: {result}")
+            return bool(result.get("success", False))
+
+        except Exception as e:
+            logger.error(f"Supabase track_download error: {e}")
+            return False
 
     def set_keys(self, keys_list: List[str], drm_type: str, license_url: str, pssh: str, kid_to_label: Optional[dict] = None) -> int:
         """

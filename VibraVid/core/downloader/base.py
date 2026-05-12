@@ -1,16 +1,18 @@
-﻿# 2.03.26
+# 2.03.26
 
 import os
 import json
+import re
 import shutil
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from rich.console import Console
 
-from VibraVid.utils import config_manager
-from VibraVid.core.ui.tracker import download_tracker
+from VibraVid.utils import config_manager, os_manager
+from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.muxing import join_video, join_audios, join_subtitles, build_hybrid_output, probe_media_file
 from VibraVid.core.muxing.helper.video import get_media_metadata
 from VibraVid.core.muxing.helper.video_hybrid import download_other_tracks
@@ -28,25 +30,73 @@ DEBUG_TRACK_JSON = config_manager.config.get_bool("DEFAULT", "debug_track_json")
 
 
 class BaseDownloader:
-    """
-    Shared base for HLS_Downloader and DASH_Downloader.
+    def __init__(self, output_path: str, temp_suffix: str, **kwargs):
+        """Common initialisation shared by DASH / HLS / ISM sub-classes."""
+        if not output_path:
+            output_path = f"download.{EXTENSION_OUTPUT}"
+            
+        self.output_path = os_manager.get_sanitize_path(output_path)
+        if not self.output_path.endswith(f".{EXTENSION_OUTPUT}"):
+            self.output_path += f".{EXTENSION_OUTPUT}"
 
-    Subclasses are responsible for setting up:
-        self.output_path = full final file path
-        self.filename_base = stem without extension
-        self.output_dir = temp working directory
-        self.download_id = tracker ID (or None)
-        self.last_merge_result = populated by merge methods
-        self.copied_subtitles = list staging subtitles for deferred copy
-        self.copied_audios = list staging audios for deferred copy
-        self.audio_only = True when there is no video track
-    """
+        self.filename_base = os.path.splitext(os.path.basename(self.output_path))[0]
+        self.output_dir = os.path.join(
+            os.path.dirname(self.output_path), self.filename_base + temp_suffix
+        )
+        self.file_already_exists = os.path.exists(self.output_path)
+
+        self.download_id = context_tracker.download_id
+        self.site_name = context_tracker.site_name
+
+        self.error = None
+        self.last_merge_result = None
+        self.media_players = None
+        self.copied_subtitles = []
+        self.copied_audios = []
+        self.audio_only = False
+
+    @staticmethod
+    def _resolve_url(url_or_path: str) -> str:
+        if not url_or_path:
+            return url_or_path
+        stripped = url_or_path.strip()
+
+        if re.match(r'^[a-zA-Z][a-zA-Z0-9+\-.]*://', stripped):
+            return stripped
+
+        path = Path(stripped)
+        if path.exists() and path.is_file():
+            return path.resolve().as_uri()
+        return stripped
+
     def _build_tracks_json(self, streams: list, keys: list, manifest_url: str) -> dict:
-        """Build a JSON-serializable dict of selected tracks only. """
+        """Build a JSON-serializable dict of selected tracks only."""
         videos = []
         audios: Dict[str, list] = {}
         subtitles: Dict[str, str] = {}
-        other_tracks = list(getattr(self, "other_tracks", []) or [])
+        other_tracks = []
+        for track in list(getattr(self, "other_tracks", []) or []):
+            if not isinstance(track, dict):
+                continue
+            normalized_track = {
+                "type": track.get("type"),
+                "url": track.get("url"),
+                "language": track.get("language"),
+            }
+            if normalized_track["type"] and normalized_track["url"]:
+                other_tracks.append(normalized_track)
+
+        def _to_mbps(value):
+            if value is None:
+                return None
+            try:
+                bps = float(value)
+            except (TypeError, ValueError):
+                return None
+            if bps <= 0:
+                return None
+            mbps = bps / 1_000_000
+            return f"{mbps:.3f}".rstrip("0").rstrip(".") + " Mbps"
 
         for s in streams:
             if not getattr(s, "selected", False):
@@ -54,20 +104,31 @@ class BaseDownloader:
             stype = getattr(s, "type", "") or ""
 
             if stype == "video":
+                codec = s.get_short_codec() if hasattr(s, 'get_short_codec') else getattr(s, "codecs", None)
+                if not codec:
+                    codec = "H.264"
                 videos.append({
                     "manifest_url": manifest_url,
                     "quality": getattr(s, "resolution", None),
-                    "bitrate": getattr(s, "bitrate", None),
+                    "bitrate": _to_mbps(getattr(s, "bitrate", None)),
+                    "codec": codec,
                 })
 
             elif stype == "audio":
+                audio_url = getattr(s, "playlist_url", None) or getattr(s, "url", None) or manifest_url
+                if audio_url == manifest_url:
+                    continue  # same manifest as video, skip
                 lang = (getattr(s, "language", None) or "und").strip()
+                codec = s.get_short_codec() if hasattr(s, 'get_short_codec') else getattr(s, "codecs", None)
+                if not codec:
+                    codec = "AAC"
+                audio_bitrate = _to_mbps(getattr(s, "bitrate", None))
+                if audio_bitrate is None:
+                    audio_bitrate = "128kbps"
                 entry = {
-                    "manifest_url": manifest_url,
-                    "codec": getattr(s, "codecs", None),
-                    "channels": getattr(s, "channels", None),
-                    "bitrate": getattr(s, "bitrate", None),
-                    "url": getattr(s, "playlist_url", None) or getattr(s, "url", None),
+                    "manifest_url": audio_url,
+                    "codec": codec,
+                    "bitrate": audio_bitrate,
                 }
                 audios.setdefault(lang, []).append(entry)
 
@@ -76,30 +137,80 @@ class BaseDownloader:
                 name = getattr(s, "name", None) or lang
                 label = f"{lang} - {name}" if name and name != lang else lang
                 url = getattr(s, "playlist_url", None) or getattr(s, "url", None)
+                
+                if not url and manifest_url:
+                    url = manifest_url
+
+                if url == manifest_url:
+                    continue
+                
                 subtitles[label] = url
 
-        return {
-            "videos": videos,
-            "audios": audios,
-            "subtitles": subtitles,
-            "other_tracks": other_tracks,
-            "keys": list(keys) if keys else [],
-        }
+        formatted_keys = []
+        for k in (keys or []):
+            if isinstance(k, (list, tuple)) and len(k) == 2:
+                formatted_keys.append(f"{k[0]}:{k[1]}")
+            else:
+                formatted_keys.append(str(k))
+
+        result = {"videos": videos}
+        if audios:
+            result["audios"] = audios
+        result["subtitles"] = subtitles
+        result["other_tracks"] = other_tracks
+        result["keys"] = formatted_keys
+        return result
+
+    def track_download_start(self, title: str, media_type: str, site: str) -> None:
+        """Fire-and-forget: notify Supabase that a download has started."""
+        def _run():
+            try:
+                from VibraVid.utils.vault.supa import supa_vault
+                if supa_vault:
+                    title_str = (title or "").strip()
+                    media_type_str = (media_type or "Film").strip()
+                    site_str = (site or "").strip().lower()
+                    logger.debug(f"[TRACK] Tracking download: title={title_str}, type={media_type_str}, service={site_str}")
+                    result = supa_vault.track_download(
+                        title=title_str,
+                        media_type=media_type_str,
+                        service=site_str,
+                    )
+                    logger.debug(f"[TRACK] Track result: {result}")
+                else:
+                    logger.warning("[TRACK] supa_vault not initialized (VAULT_URL empty or not configured)")
+            except Exception as e:
+                logger.error(f"[TRACK] Error tracking download: {e}", exc_info=True)
+
+        t = threading.Thread(target=_run, daemon=False)
+        t.start()
 
     def _log_tracks_json(self, streams: list, keys: list, manifest_url: str) -> None:
-        """Emit a TRACKS_JSON logger.info"""
-        from VibraVid.core.ui.tracker import context_tracker
+        """Emit a TRACKS_JSON logger.info and trigger Supabase download tracking."""
         tracks = self._build_tracks_json(streams, keys, manifest_url)
+
+        # Read all metadata from context_tracker (populated by tv_download_manager / site_search_manager)
+        season = context_tracker.season or 0
+        episode = context_tracker.episode or 0
+        episode_name = context_tracker.episode_name or ""
+        media_type = context_tracker.media_type or "Film"
+        if season > 0 or episode > 0:
+            media_type = "TV"
+
+        title = context_tracker.title or self.filename_base
+        site  = context_tracker.site_name or getattr(self, "site_name", "") or ""
+
         payload = {
-            "name": context_tracker.title or self.filename_base,
-            "type": (context_tracker.media_type or "UNKNOWN").upper(),
-            "season": context_tracker.season  or 0,
-            "episode": context_tracker.episode or 0,
-            "episode_name": context_tracker.episode_name,
+            "name": title,
+            "type": media_type.upper(),
+            "season": season,
+            "episode": episode,
+            "episode_name": episode_name,
             "tracks": tracks,
         }
         if DEBUG_TRACK_JSON:
             logger.info("TRACKS_JSON\n" + json.dumps(payload, indent=4, ensure_ascii=False))
+        self.track_download_start(title=title, media_type=media_type, site=site)
 
     def _no_media_downloaded(self, status: dict) -> bool:
         """Return True when the download produced absolutely nothing."""
@@ -188,11 +299,12 @@ class BaseDownloader:
 
         for track in other_track_results:
             track_kind = (track.get("kind") or track.get("type") or "").lower()
-            if track_kind == "video":
+            base_kind = track_kind.split(":")[0]   # "video:hdr10" → "video"
+            if base_kind == "video":
                 continue
-            if track_kind == "audio":
+            if base_kind == "audio":
                 audio_tracks.append(track)
-            elif track_kind == "subtitle":
+            elif base_kind == "subtitle":
                 subtitle_tracks.append(track)
 
         if video_track is None:
@@ -221,7 +333,7 @@ class BaseDownloader:
         if other_track_results or (video_probe or {}).get("dolby_vision"):
             hybrid_file = build_hybrid_output(
                 video_track=video_track if isinstance(video_track, dict) else {"path": video_path},
-                other_videos=[track for track in other_track_results if (track.get("kind") or "").lower() == "video"],
+                other_videos=[track for track in other_track_results if (track.get("kind") or track.get("type") or "").lower().split(":")[0] == "video"],
                 audio_tracks=audio_tracks,
                 subtitle_tracks=subtitle_tracks,
                 output_path=self.output_path,
@@ -229,7 +341,10 @@ class BaseDownloader:
             )
             if hybrid_file:
                 self.last_merge_result = {"hybrid": True, "output": hybrid_file}
+                # hybrid_file include già audio e subtitle via mkvmerge:
+                # non chiamare join_audios/join_subtitles separatamente
                 return hybrid_file
+
 
         if not audio_tracks and not subtitle_tracks:
             console.print("[cyan]\nNo additional tracks to merge, muxing video...")

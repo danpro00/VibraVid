@@ -97,14 +97,7 @@ class GetSerieInfo:
 
             # We'll aggregate episodes from both Italian and English catalogs
             episodes_by_lang = {}
-
-            # Determine if this is the last season -> only then attach language info
-            try:
-                last_season_number = max([s.number for s in self.seasons_manager.seasons])
-            except Exception:
-                last_season_number = number_season
-
-            include_language = (number_season == last_season_number)
+            include_language = True
 
             for lang in ['it', 'en']:
                 try:
@@ -171,7 +164,8 @@ class GetSerieInfo:
                                 **kwargs
                             )
 
-                # Add episodes to season in order
+                # Replace any existing episodes with merged result
+                season_obj.episodes.episodes.clear()
                 for key in sorted(merged.keys()):
                     season_obj.episodes.add(merged[key])
 

@@ -150,6 +150,13 @@ def process_episode_download(index_season_selected: int, scrape_serie: Any, down
                 console.print(f"[yellow]Download stopped by user before episode {i_episode}.")
                 break
                 
+            # Update context tracker for the current episode
+            context_tracker.season = index_season_selected
+            context_tracker.episode = i_episode
+            ep_obj = episodes[i_episode-1]
+            context_tracker.episode_name = ep_obj.get('name') if isinstance(ep_obj, dict) else getattr(ep_obj, 'name', None)
+
+            # Trigger the download callback for the current episode
             path, stopped = download_video_callback(episodes[i_episode-1], index_season_selected, i_episode)
             
             if _is_user_stop_requested() or stopped:
@@ -217,6 +224,13 @@ def process_episode_download(index_season_selected: int, scrape_serie: Any, down
                 console.print(f"[yellow]Download stopped by user before episode {i_episode}.")
                 break
                 
+            # Update context tracker for the current episode
+            context_tracker.season = index_season_selected
+            context_tracker.episode = i_episode
+            ep_obj = episodes[i_episode-1]
+            context_tracker.episode_name = ep_obj.get('name') if isinstance(ep_obj, dict) else getattr(ep_obj, 'name', None)
+
+            # Trigger the download callback for the current episode
             path, stopped = download_video_callback(episodes[i_episode-1], index_season_selected, i_episode)
             
             if stopped or _is_user_stop_requested():

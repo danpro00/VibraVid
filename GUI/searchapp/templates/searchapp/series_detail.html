@@ -211,6 +211,17 @@
                 <!-- Overlay -->
                 <div class="absolute inset-0 bg-black/40 rounded-md sm:rounded-lg"></div>
 
+                <!-- Language Badge -->
+                {% if episode.language %}
+                <div class="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 z-[2] flex gap-0.5">
+                  {% for lang in episode.language_list %}
+                  <span class="px-1 py-0.5 text-[7px] sm:text-[9px] font-bold uppercase rounded shadow-sm {% if lang == 'it' %}bg-green-600 text-white{% elif lang == 'en' %}bg-blue-600 text-white{% else %}bg-gray-600 text-white{% endif %}">
+                    {{ lang }}
+                  </span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+
                 <!-- Episode Number -->
                 <div class="episode-number relative text-sm sm:text-base lg:text-lg font-black text-white transition-colors z-[1]">
                   {{ episode.number }}

@@ -26,6 +26,7 @@ from VibraVid.core.source.download_utils import (
     format_size   as _fmt_size,
     format_speed  as _fmt_speed,
     estimate_total_size as _estimate_total_size,
+    fmt_dur as _fmt_dur,
 )
 from VibraVid.setup import get_bento4_decrypt_path
 
@@ -676,12 +677,6 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
             if last_exc:
                 raise last_exc
 
-        def _fmt_dur(seconds: float) -> str:
-            s = int(seconds)
-            h, rem = divmod(s, 3600)
-            m, sec = divmod(rem, 60)
-            return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
-        
         def _progress(done: int, total_: int, total_bytes: int, speed_bps: float, speed_label: Optional[str] = None) -> None:
             pct = int((done / total_) * 100) if total_ else 0
             estimated_total = _estimate_total_size(total_bytes, done, total_) if done > 0 else total_bytes

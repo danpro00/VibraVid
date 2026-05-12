@@ -60,3 +60,11 @@ def estimate_total_size(completed_bytes: int, done_segs: int, total_segs: int) -
     if done_segs <= 0 or total_segs <= 0:
         return completed_bytes
     return int((completed_bytes / done_segs) * total_segs)
+
+
+def fmt_dur(seconds: float) -> str:
+    """Format seconds as HH:MM:SS or MM:SS."""
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"

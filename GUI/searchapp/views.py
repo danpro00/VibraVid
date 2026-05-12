@@ -1,13 +1,16 @@
 # 06.06.25
 
 import os
+import re
 import time
 import json
-import re
 import threading
 import atexit
 import signal
 import logging
+import zipfile
+import shutil
+import importlib
 import concurrent.futures
 from typing import Any, Dict, List
 
@@ -64,6 +67,7 @@ from GUI.searchapp.api import get_api
 from GUI.searchapp.api.base import Entries
 
 from VibraVid.core.ui.tracker import  download_tracker, context_tracker
+from VibraVid.utils import config_manager
 from VibraVid.utils.tmdb_client import tmdb_client
 from VibraVid.cli.run import execute_hooks
 
@@ -550,10 +554,19 @@ def series_detail(request: HttpRequest) -> HttpResponse:
         
         seasons_data = []
         for season in seasons:
+            episodes_data = []
+
+            # Enrich episodes with language list for better display
+            for ep in season.episodes:
+                ep_dict = ep.__dict__.copy()
+                lang = ep_dict.get("language") or ""
+                ep_dict["language_list"] = [l.strip() for l in lang.split(",") if l.strip()] if lang else []
+                episodes_data.append(ep_dict)
+
             seasons_data.append({
                 "number": season.number,
                 "episode_count": season.episode_count,
-                "episodes": [ep.__dict__ for ep in season.episodes],
+                "episodes": episodes_data,
             })
         
         return render(
@@ -1159,7 +1172,141 @@ def watchlist_status(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"last_checked": 0, "items_count": 0})
 
 
-@require_http_methods(["GET"])
+@require_http_methods(["POST"])
+@csrf_exempt
+def upload_service_zip(request: HttpRequest) -> JsonResponse:
+    """
+    Handle ZIP file upload to install a new service plugin.
+    Extracts the ZIP into VibraVid/services/, validates the structure,
+    creates a GUI API stub, and reloads the service registry.
+    """
+    uploaded = request.FILES.get("service_zip")
+    if not uploaded:
+        return JsonResponse({"success": False, "error": "Nessun file ZIP caricato."}, status=400)
+
+    if not uploaded.name.lower().endswith(".zip"):
+        return JsonResponse({"success": False, "error": "Il file deve essere un archivio .zip"}, status=400)
+
+    # Determine services directory (VibraVid/services)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))  # project root
+    services_dir = os.path.join(base_dir, "VibraVid", "services")
+
+    if not os.path.isdir(services_dir):
+        return JsonResponse({"success": False, "error": f"Directory dei servizi non trovata: {services_dir}"}, status=500)
+
+    import tempfile
+    tmp_dir = tempfile.mkdtemp(prefix="vv_service_upload_")
+    errors = []
+    installed_services = []
+
+    try:
+        # Save uploaded ZIP to temp
+        zip_path = os.path.join(tmp_dir, uploaded.name)
+        with open(zip_path, "wb") as f:
+            for chunk in uploaded.chunks():
+                f.write(chunk)
+
+        # Extract
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                zf.extractall(tmp_dir)
+        except zipfile.BadZipFile:
+            return JsonResponse({"success": False, "error": "File ZIP non valido o corrotto."}, status=400)
+
+        # Find service directories (folders with __init__.py)
+        extracted_items = [d for d in os.listdir(tmp_dir) if os.path.isdir(os.path.join(tmp_dir, d))]
+
+        service_folders = []
+        for item in extracted_items:
+            item_path = os.path.join(tmp_dir, item)
+            init_file = os.path.join(item_path, "__init__.py")
+            if os.path.isfile(init_file):
+                service_folders.append(item)
+            else:
+                # Check one level deeper (ZIP might have a wrapper dir)
+                for sub in os.listdir(item_path):
+                    sub_path = os.path.join(item_path, sub)
+                    if os.path.isdir(sub_path) and os.path.isfile(os.path.join(sub_path, "__init__.py")):
+                        service_folders.append(os.path.join(item, sub))
+
+        if not service_folders:
+            return JsonResponse({
+                "success": False,
+                "error": "Nessun servizio valido trovato nello ZIP. Ogni servizio deve contenere __init__.py con 'indice' e '_useFor'."
+            }, status=400)
+
+        for svc_rel in service_folders:
+            svc_path = os.path.join(tmp_dir, svc_rel)
+            svc_name = os.path.basename(svc_rel).lower()
+            init_path = os.path.join(svc_path, "__init__.py")
+
+            # Validate __init__.py has required declarations
+            try:
+                with open(init_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                has_indice = False
+                has_usefor = False
+                for line in content.split("\n"):
+                    stripped = line.strip()
+                    if stripped.startswith("indice =") or stripped.startswith("indice="):
+                        has_indice = True
+                    if stripped.startswith("_useFor =") or stripped.startswith("_useFor="):
+                        has_usefor = True
+
+                if not has_indice:
+                    errors.append(f"'{svc_name}': manca la dichiarazione 'indice' in __init__.py")
+                    continue
+                if not has_usefor:
+                    errors.append(f"'{svc_name}': manca la dichiarazione '_useFor' in __init__.py")
+                    continue
+
+            except Exception as e:
+                errors.append(f"'{svc_name}': errore nella lettura di __init__.py: {e}")
+                continue
+
+            # Check for conflicts
+            dest_path = os.path.join(services_dir, svc_name)
+            if os.path.exists(dest_path):
+                shutil.rmtree(dest_path)
+
+            # Copy service to services directory
+            shutil.copytree(svc_path, dest_path)
+            installed_services.append(svc_name)
+
+        # Reload the service registries
+        if installed_services:
+            try:
+                # Reload CLI service loader
+                from VibraVid.services._base import site_loader
+                importlib.reload(site_loader)
+            except Exception as e:
+                errors.append(f"Reload CLI services: {e}")
+
+            try:
+                # Reload GUI API registry
+                from GUI.searchapp import api as gui_api_module
+                gui_api_module._INITIALIZED = False
+                gui_api_module._API_REGISTRY.clear()
+                gui_api_module._initialize_registry()
+            except Exception as e:
+                errors.append(f"Reload GUI API registry: {e}")
+
+        result = {
+            "success": len(installed_services) > 0,
+            "installed": installed_services,
+            "errors": errors,
+            "message": f"Installati {len(installed_services)} servizi: {', '.join(installed_services)}" if installed_services else "Nessun servizio installato."
+        }
+        return JsonResponse(result, status=200 if installed_services else 400)
+
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Errore durante l'installazione: {e}"}, status=500)
+
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def settings_editor(request: HttpRequest) -> HttpResponse:
     conf_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Conf")
     config_path = os.path.join(conf_dir, "config.json")
@@ -1711,3 +1858,34 @@ def arr_trigger_sync(request: HttpRequest) -> JsonResponse:
 
     except Exception as exc:
         return JsonResponse({"status": "error", "message": str(exc)}, status=500)
+
+
+@require_http_methods(["POST"])
+def reload_config(request: HttpRequest) -> JsonResponse:
+    try:
+        file_type = None
+        if request.content_type and "application/json" in request.content_type:
+            try:
+                data = json.loads(request.body.decode("utf-8"))
+                file_type = data.get("file_type")
+            except Exception:
+                file_type = None
+
+        if file_type == "login":
+            config_manager.reload_login_only()
+            message = "Login ricaricato"
+        elif file_type == "config":
+            config_manager.reload_config_only()
+            message = "Config ricaricata"
+        else:
+            config_manager.reload()
+            message = "Config ricaricata"
+        return JsonResponse({
+            "success": True,
+            "message": message
+        })
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": f"Errore nel reload: {str(e)}"
+        }, status=500)

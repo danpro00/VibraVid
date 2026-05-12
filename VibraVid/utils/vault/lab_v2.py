@@ -5,7 +5,7 @@ from base64 import b64decode
 from typing import List, Optional
 
 from rich.console import Console
-from urllib.parse import urlparse
+from VibraVid.utils.vault._url_utils import clean_license_url
 
 from VibraVid.utils.config import config_manager
 from VibraVid.utils.http_client import create_client, get_headers
@@ -61,9 +61,7 @@ class LabDBVault:
     """Vault backed by the external Lab API."""
 
     def _clean_license_url(self, license_url: str) -> str:
-        """Strip query params / fragments from a license URL."""
-        parsed = urlparse(license_url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/")
+        return clean_license_url(license_url)
 
     def _normalize_kid(self, kid: str) -> str:
         """Return a clean lowercase hex KID, resolving PSSH blobs when needed."""

@@ -144,3 +144,15 @@ class ArrProcessingQueue(models.Model):
 
     def __str__(self):
         return f"Queue [{self.dedup_key}] — {'done' if self.completed_at else 'pending'}"
+    
+
+class DownloadHistory(models.Model):
+    download_id = models.CharField(max_length=128, db_index=True)
+    payload = models.TextField()
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.download_id} @ {self.created_at}"

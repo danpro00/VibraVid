@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from VibraVid.core.muxing.helper.video import binary_merge_segments
-from VibraVid.core.source.download_utils import (format_size as _fmt_size, format_speed as _fmt_speed)
+from VibraVid.core.source.download_utils import (format_size as _fmt_size, format_speed as _fmt_speed, fmt_dur as _fmt_dur)
 from VibraVid.core.manifest.mpd import DashParser
 from VibraVid.core.decryptor import Decryptor
 from VibraVid.utils.http_client import create_client
@@ -31,11 +31,6 @@ def _sleep_interruptible(seconds: float, stop_check, poll: float = 0.25) -> None
         time.sleep(min(poll, max(0.0, deadline - time.monotonic())))
 
 
-def _fmt_dur(seconds: float) -> str:
-    s = int(seconds)
-    h, rem = divmod(s, 3600)
-    m, sec = divmod(rem, 60)
-    return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
 
 
 def _emit_live_progress(bar_manager, task_key: str, seg_done: int, total_bytes: int, speed_bps: float, elapsed_dur: float = 0.0) -> None:

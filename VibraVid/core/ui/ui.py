@@ -36,6 +36,15 @@ def _c(text: str, colour: Optional[str]) -> Text:
     return Text(str(text), style=colour) if colour else Text(str(text))
 
 
+def sort_streams_key(s):
+    """Sort key for stream display: video first, then audio, then subtitle."""
+    is_ext = getattr(s, "is_external", False) or getattr(s, "id", "") == "EXT"
+    stype = getattr(s, "type", "")
+    order = {"video": 0, "audio": 1, "subtitle": 2}.get(stype, 3)
+    bitrate = getattr(s, "bitrate", 0) or 0
+    return (order, int(is_ext), -bitrate)
+
+
 def build_table(streams: list, selected: Optional[Set[int]] = None, cursor: Optional[int] = None, window_size: int = 15, highlight_cursor: bool = True) -> Table:
     """
     Build and return a Rich stream-selection table.
@@ -60,14 +69,7 @@ def build_table(streams: list, selected: Optional[Set[int]] = None, cursor: Opti
     for name, justify in cols:
         table.add_column(name, justify=justify, no_wrap=True)
 
-    def _sort_key(s):
-        is_ext = getattr(s, "is_external", False) or getattr(s, "id", "") == "EXT"
-        stype = getattr(s, "type", "")
-        order = {"video": 0, "audio": 1, "subtitle": 2}.get(stype, 3)
-        bitrate = getattr(s, "bitrate", 0) or 0
-        return (order, int(is_ext), -bitrate)
-
-    sorted_streams = sorted(streams, key=_sort_key)
+    sorted_streams = sorted(streams, key=sort_streams_key)
     total = len(sorted_streams)
 
     interactive = cursor is not None

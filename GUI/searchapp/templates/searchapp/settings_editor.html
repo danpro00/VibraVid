@@ -73,6 +73,12 @@
             Ripristina
           </button>
           <button 
+            onclick="reloadConfig()"
+            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all"
+          >
+            Ricarica config
+          </button>
+          <button 
             onclick="saveSettings('config')"
             class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all transform hover:scale-105 active:scale-95"
           >
@@ -97,6 +103,12 @@
             class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-all"
           >
             Ripristina
+          </button>
+          <button 
+            onclick="reloadConfig(true, 'login')"
+            class="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-lg transition-all"
+          >
+            Ricarica login
           </button>
           <button 
             onclick="saveSettings('login')"
@@ -304,6 +316,76 @@
     </div>
 
   </div>
+
+  <!-- Service Plugin Upload Section -->
+  <div class="mt-8 sm:mt-12">
+    <div class="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
+      <svg class="w-6 h-6 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+      </svg>
+      <h2 class="text-2xl sm:text-3xl font-black text-white leading-tight">
+        Aggiungi Servizio
+      </h2>
+    </div>
+    <p class="text-gray-400 ml-10 mb-6">
+      Carica un file ZIP contenente un nuovo servizio (es. <code class="bg-gray-800 px-1.5 py-0.5 rounded text-sm">Spotify.zip</code> con dentro la cartella <code class="bg-gray-800 px-1.5 py-0.5 rounded text-sm">Spotify/__init__.py</code>, <code class="bg-gray-800 px-1.5 py-0.5 rounded text-sm">downloader.py</code>, <code class="bg-gray-800 px-1.5 py-0.5 rounded text-sm">scrapper.py</code>)
+    </p>
+
+    <div class="bg-gradient-to-br from-gray-900/80 to-gray-900/40 backdrop-blur-xl border border-gray-800 rounded-xl overflow-hidden">
+      <div class="p-4 sm:p-6">
+        
+        <!-- Drop Zone -->
+        <div 
+          id="drop-zone"
+          class="relative border-2 border-dashed border-gray-600 hover:border-red-500 rounded-xl p-8 sm:p-12 text-center transition-all cursor-pointer"
+          onclick="document.getElementById('service-zip-input').click()"
+        >
+          <input 
+            type="file" 
+            id="service-zip-input" 
+            accept=".zip" 
+            class="hidden"
+            onchange="handleFileSelected(this)"
+          >
+          
+          <div id="drop-zone-idle">
+            <svg class="w-12 h-12 sm:w-16 sm:h-16 text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            <p class="text-gray-300 text-lg font-semibold mb-1">Trascina qui il file ZIP</p>
+            <p class="text-gray-500 text-sm">oppure clicca per selezionare</p>
+          </div>
+
+          <div id="drop-zone-selected" class="hidden">
+            <svg class="w-12 h-12 text-red-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <p id="selected-file-name" class="text-white text-lg font-bold mb-1"></p>
+            <p id="selected-file-size" class="text-gray-400 text-sm"></p>
+          </div>
+        </div>
+
+        <!-- Upload Button -->
+        <div class="mt-4 flex gap-3 flex-wrap justify-end items-center">
+          <p id="upload-message" class="text-sm text-gray-400 flex-1"></p>
+          <button 
+            id="upload-btn"
+            onclick="uploadServiceZip()"
+            disabled
+            class="px-6 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-all transform hover:scale-105 active:scale-95 flex items-center gap-2"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+            </svg>
+            Installa Servizio
+          </button>
+        </div>
+
+        <!-- Results Area -->
+        <div id="upload-results" class="hidden mt-4 p-4 rounded-lg border"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -380,7 +462,10 @@
   function resetEditor(tab) {
     const original = tab === 'config' ? originalConfig : originalLogin;
     document.getElementById(tab + '-editor').value = original;
-    showMessage(tab, 'Editor ripristinato', 'info');
+    const infoMessage = tab === 'login'
+      ? 'Login editor ripristinato'
+      : 'Config editor ripristinato';
+    showMessage(tab, infoMessage, 'info');
   }
 
   function showMessage(fileType, message, type = 'success') {
@@ -402,9 +487,12 @@
   async function saveSettings(fileType) {
     const editor = document.getElementById(fileType + '-editor');
     const content = editor.value.trim();
+    
     if (!content) { showMessage(fileType, 'Contenuto vuoto', 'error'); return; }
+    
     try { JSON.parse(content); } catch (e) { showMessage(fileType, `JSON non valido: ${e.message}`, 'error'); return; }
     showMessage(fileType, 'Salvataggio in corso...', 'info');
+    
     try {
       const response = await fetch('{% url "save_settings" %}', {
         method: 'POST',
@@ -420,7 +508,57 @@
         showMessage(fileType, data.error || 'Errore', 'error');
       }
     } catch (error) {
-      showMessage(fileType, `Errore: ${error.message}`, 'error');
+      const errMessage = fileType === 'login'
+        ? `Login salvataggio fallito: ${error.message}`
+        : `Config salvataggio fallito: ${error.message}`;
+      showMessage(fileType, errMessage, 'error');
+    }
+  }
+
+  async function reloadConfig(showMessages = true, messageTarget = 'config') {
+    if (showMessages) {
+      const label = messageTarget === 'login' ? 'Ricarica login in corso...' : 'Ricarica config in corso...';
+      showMessage(messageTarget, label, 'info');
+    }
+
+    try {
+      const response = await fetch('{% url "reload_config" %}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify({
+          file_type: messageTarget
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        if (showMessages) {
+          const okMessage = messageTarget === 'login'
+            ? (data.message || 'Login ricaricato')
+            : (data.message || 'Config ricaricata');
+          showMessage(messageTarget, okMessage, 'success');
+        }
+        return true;
+      }
+      if (showMessages) {
+        const errMessage = messageTarget === 'login'
+          ? (data.error || 'Login reload fallito')
+          : (data.error || 'Config reload fallito');
+        showMessage(messageTarget, errMessage, 'error');
+      }
+      return false;
+    } catch (error) {
+      if (showMessages) {
+        const errMessage = messageTarget === 'login'
+          ? `Login reload fallito: ${error.message}`
+          : `Config reload fallito: ${error.message}`;
+        showMessage(messageTarget, errMessage, 'error');
+      }
+      return false;
     }
   }
 
@@ -636,5 +774,120 @@
   }
 
   switchTab('config');
+
+  // ========== SERVICE ZIP UPLOAD ==========
+  let selectedZipFile = null;
+
+  function handleFileSelected(input) {
+    const file = input.files[0];
+    if (!file) return;
+    selectedZipFile = file;
+
+    document.getElementById('drop-zone-idle').classList.add('hidden');
+    document.getElementById('drop-zone-selected').classList.remove('hidden');
+    document.getElementById('selected-file-name').textContent = file.name;
+    document.getElementById('selected-file-size').textContent = formatFileSize(file.size);
+    document.getElementById('upload-btn').disabled = false;
+    document.getElementById('upload-results').classList.add('hidden');
+    document.getElementById('upload-message').textContent = '';
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  // Drag & drop support
+  const dropZone = document.getElementById('drop-zone');
+  if (dropZone) {
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('border-red-500', 'bg-red-900/10');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('border-red-500', 'bg-red-900/10');
+      });
+    });
+    dropZone.addEventListener('drop', function(e) {
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].name.toLowerCase().endsWith('.zip')) {
+        document.getElementById('service-zip-input').files = files;
+        handleFileSelected(document.getElementById('service-zip-input'));
+      }
+    });
+  }
+
+  async function uploadServiceZip() {
+    if (!selectedZipFile) return;
+
+    const btn = document.getElementById('upload-btn');
+    const msgEl = document.getElementById('upload-message');
+    const resultsEl = document.getElementById('upload-results');
+
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Installazione in corso...`;
+    msgEl.textContent = '';
+    resultsEl.classList.add('hidden');
+
+    const formData = new FormData();
+    formData.append('service_zip', selectedZipFile);
+
+    try {
+      const response = await fetch('{% url "upload_service_zip" %}', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+
+      resultsEl.classList.remove('hidden');
+
+      if (data.success) {
+        resultsEl.className = 'mt-4 p-4 rounded-lg border border-green-700 bg-green-900/20';
+        let html = `<p class="text-green-400 font-bold mb-2">Installazione completata!</p>`;
+        html += `<p class="text-green-300 text-sm">${data.message}</p>`;
+        if (data.installed && data.installed.length > 0) {
+          html += `<div class="mt-2 flex flex-wrap gap-2">`;
+          data.installed.forEach(svc => {
+            html += `<span class="px-3 py-1 bg-green-800/50 text-green-300 rounded-full text-sm font-semibold">${svc}</span>`;
+          });
+          html += `</div>`;
+        }
+        if (data.errors && data.errors.length > 0) {
+          html += `<div class="mt-3 text-yellow-400 text-sm"><p class="font-bold">Avvisi:</p><ul class="list-disc ml-5 mt-1">`;
+          data.errors.forEach(err => { html += `<li>${err}</li>`; });
+          html += `</ul></div>`;
+        }
+        resultsEl.innerHTML = html;
+      } else {
+        resultsEl.className = 'mt-4 p-4 rounded-lg border border-red-700 bg-red-900/20';
+        let html = `<p class="text-red-400 font-bold mb-2">Errore nell'installazione</p>`;
+        html += `<p class="text-red-300 text-sm">${data.error || data.message || 'Errore sconosciuto'}</p>`;
+        if (data.errors && data.errors.length > 0) {
+          html += `<ul class="list-disc ml-5 mt-2 text-red-300 text-sm">`;
+          data.errors.forEach(err => { html += `<li>${err}</li>`; });
+          html += `</ul>`;
+        }
+        resultsEl.innerHTML = html;
+      }
+    } catch (error) {
+      resultsEl.classList.remove('hidden');
+      resultsEl.className = 'mt-4 p-4 rounded-lg border border-red-700 bg-red-900/20';
+      resultsEl.innerHTML = `<p class="text-red-400 font-bold">Errore di rete</p><p class="text-red-300 text-sm">${error.message}</p>`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg> Installa Servizio`;
+    }
+  }
 </script>
 {% endblock %}

@@ -6,7 +6,7 @@ from typing import Set
 from rich.console import Console
 
 from VibraVid.utils.keyboard import get_key
-from VibraVid.core.ui.ui import build_table
+from VibraVid.core.ui.ui import build_table, sort_streams_key
 
 
 logger = logging.getLogger(__name__)
@@ -22,14 +22,7 @@ class InteractiveStreamSelector:
             streams: List of Stream objects to select from
             window_size: Number of rows to display at once (for pagination)
         """
-        def _sort_key(s):
-            is_ext = getattr(s, "is_external", False) or getattr(s, "id", "") == "EXT"
-            stype = getattr(s, "type", "")
-            order = {"video": 0, "audio": 1, "subtitle": 2}.get(stype, 3)
-            bitrate = getattr(s, "bitrate", 0) or 0
-            return (order, int(is_ext), -bitrate)
-
-        self.streams = sorted(streams, key=_sort_key)
+        self.streams = sorted(streams, key=sort_streams_key)
         self.window_size = max(5, window_size)
         self.selected: Set[int] = set()
         self.cursor = 0
