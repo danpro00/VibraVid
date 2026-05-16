@@ -145,25 +145,31 @@ def download_film(select_title: Entries) -> str:
     url_id = select_title.get('url').split('/')[-1]
     preferred_locales = parse_select_audio_filter(config_manager.config.get("DOWNLOAD", "select_audio", default=""))
 
-    # Resolve all requested locales in a single playback call, then split into main + extras
+    # Resolve requested locale to GUID using a single slot open, then fetch extras one by one
     main_id = url_id
     extra_audio_tracks = []
     if preferred_locales:
-        versions = client.get_versions_by_locales(url_id, preferred_locales)
-        main_version = next((v for v in versions if v["audio_locale"] == preferred_locales[0]), None)
-        time.sleep(5)  # Small delay to avoid rate limiting between calls
+        available = client.get_available_versions(url_id)
+        time.sleep(2)
 
-        if main_version:
-            main_id = main_version["guid"]
+        locale_to_guid = {v["audio_locale"]: v["guid"] for v in available}
+        for locale in preferred_locales:
+            if locale in locale_to_guid:
+                main_id = locale_to_guid[locale]
+                break
 
-        for v in versions:
-            if v["guid"] == main_id:
+        for locale in preferred_locales[1:]:
+            guid = locale_to_guid.get(locale)
+            if not guid or guid == main_id:
                 continue
+            try:
+                time.sleep(2)
+                ex_mpd_url, ex_hdrs, _, ex_token, _ = get_playback_session(client, guid, None)
+                ex_license_hdrs = _build_license_headers(ex_hdrs, guid, ex_mpd_url, ex_token)
+                extra_audio_tracks.append(_make_dash_audio_track(ex_mpd_url, locale, ex_hdrs, ex_license_hdrs))
+            except Exception as e:
+                console.print(f"[yellow]Error fetching audio {locale}: {e}")
 
-            hdrs = client._get_headers()
-            extra_license_hdrs = _build_license_headers(hdrs, v["guid"], v["mpd_url"], v.get("token"))
-            extra_audio_tracks.append(_make_dash_audio_track(v["mpd_url"], v["audio_locale"], hdrs, extra_license_hdrs))
-        
         if extra_audio_tracks:
             console.print(f"[dim]Extra audio: {[v['language'] for v in extra_audio_tracks]}")
 

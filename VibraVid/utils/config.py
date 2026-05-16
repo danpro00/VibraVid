@@ -25,45 +25,51 @@ CONFIG_LOGIN_DOWNLOAD_URL = 'https://raw.githubusercontent.com/AstraeLabs/VibraV
 DOMAINS_DOWNLOAD_URL = 'https://raw.githubusercontent.com/AstraeLabs/Domains/refs/heads/main/domains.json'
 
 
+_MISSING = object()
+
+
 class ConfigAccessor:
     def __init__(self, config_dict: Dict, cache: Dict, cache_prefix: str, cache_enabled: bool = True):
         self._config_dict = config_dict
         self._cache = cache
         self._cache_prefix = cache_prefix
         self._cache_enabled = cache_enabled
-    
-    def get(self, section: str, key: str, data_type: type = str, default: Any = None) -> Any:
+
+    def get(self, section: str, key: str, data_type: type = str, default: Any = _MISSING) -> Any:
         """
         Read a value from the configuration with caching.
-        
+
         Args:
             section (str): Section in the configuration
             key (str): Key to read
             data_type (type, optional): Expected data type. Default: str
-            default (Any, optional): Default value if key is not found. Default: None
-            
+            default (Any, optional): Value returned when the key is missing.
+                If omitted, a ValueError is raised. Explicit ``default=None``
+                returns ``None`` (a sentinel is used internally to tell
+                "not supplied" from "supplied as None").
+
         Returns:
             Any: The key value converted to the specified data type, or default if not found
         """
         cache_key = f"{self._cache_prefix}.{section}.{key}"
-        
+
         # Check if the value is in the cache
         if self._cache_enabled and cache_key in self._cache:
             return self._cache[cache_key]
-        
+
         # Check if the section and key exist
         if section not in self._config_dict:
-            if default is not None:
+            if default is not _MISSING:
                 logger.info(f"Section '{section}' not found in {self._cache_prefix} configuration, returning default.")
                 return default
-            
+
             raise ValueError(f"Section '{section}' not found in {self._cache_prefix} configuration")
-        
+
         if key not in self._config_dict[section]:
-            if default is not None:
+            if default is not _MISSING:
                 logger.info(f"Key '{key}' not found in section '{section}' of {self._cache_prefix} configuration, returning default.")
                 return default
-            
+
             raise ValueError(f"Key '{key}' not found in section '{section}' of {self._cache_prefix} configuration")
         
         # Get and convert the value
@@ -119,23 +125,23 @@ class ConfigAccessor:
             console.print(f"[red]{error_msg}")
             raise ValueError(f"Error converting: {data_type.__name__} to value '{value}' with error: {e}")
     
-    def get_int(self, section: str, key: str, default: int = None) -> int:
+    def get_int(self, section: str, key: str, default: Any = _MISSING) -> int:
         """Read an integer from the configuration."""
         return self.get(section, key, int, default=default)
 
-    def get_float(self, section: str, key: str, default: float = None) -> float:
+    def get_float(self, section: str, key: str, default: Any = _MISSING) -> float:
         """Read a float from the configuration."""
         return self.get(section, key, float, default=default)
 
-    def get_bool(self, section: str, key: str, default: bool = None) -> bool:
+    def get_bool(self, section: str, key: str, default: Any = _MISSING) -> bool:
         """Read a boolean from the configuration."""
         return self.get(section, key, bool, default=default)
 
-    def get_list(self, section: str, key: str, default: List[str] = None) -> List[str]:
+    def get_list(self, section: str, key: str, default: Any = _MISSING) -> List[str]:
         """Read a list from the configuration."""
         return self.get(section, key, list, default=default)
 
-    def get_dict(self, section: str, key: str, default: dict = None) -> dict:
+    def get_dict(self, section: str, key: str, default: Any = _MISSING) -> dict:
         """Read a dictionary from the configuration."""
         return self.get(section, key, dict, default=default)
     
