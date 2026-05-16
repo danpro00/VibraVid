@@ -6,8 +6,6 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.tubitv.scrapper import GetSerieInfo
-from VibraVid.services.tubitv.client import get_bearer_token
 
 
 class TubiTvAPI(BaseStreamingAPI):
@@ -16,7 +14,21 @@ class TubiTvAPI(BaseStreamingAPI):
         self.site_name = "tubitv"
         self._load_config()
         self._search_fn = None
+        self._GetSerieInfo = None
+        self._get_bearer_token_fn = None
         self.scrape_serie = None
+
+    def _get_serie_info_class(self):
+        if self._GetSerieInfo is None:
+            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.scrapper")
+            self._GetSerieInfo = getattr(module, "GetSerieInfo")
+        return self._GetSerieInfo
+
+    def _get_bearer_token(self):
+        if self._get_bearer_token_fn is None:
+            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.client")
+            self._get_bearer_token_fn = getattr(module, "get_bearer_token")
+        return self._get_bearer_token_fn()
     
     def _load_config(self):
         """Load site configuration."""
@@ -81,8 +93,8 @@ class TubiTvAPI(BaseStreamingAPI):
         
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
-            bearer_token = get_bearer_token()
-            scrape_serie = GetSerieInfo(
+            bearer_token = self._get_bearer_token()
+            scrape_serie = self._get_serie_info_class()(
                 url=media_item.url,
                 bearer_token=bearer_token,
                 series_name=media_item.name

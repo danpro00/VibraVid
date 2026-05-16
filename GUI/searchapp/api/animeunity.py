@@ -7,7 +7,6 @@ from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.utils import config_manager
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.animeunity.scrapper import ScrapeSerieAnime
 
 
 class AnimeUnityAPI(BaseStreamingAPI):
@@ -16,7 +15,14 @@ class AnimeUnityAPI(BaseStreamingAPI):
         self.site_name = "animeunity"
         self._load_config()
         self._search_fn = None
+        self._ScrapeSerieAnime = None
         self.scrape_serie = None
+
+    def _get_scrapper_class(self):
+        if self._ScrapeSerieAnime is None:
+            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.scrapper")
+            self._ScrapeSerieAnime = getattr(module, "ScrapeSerieAnime")
+        return self._ScrapeSerieAnime
     
     def _load_config(self):
         """Load site configuration."""
@@ -81,7 +87,7 @@ class AnimeUnityAPI(BaseStreamingAPI):
         
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
-            scrape_serie = ScrapeSerieAnime(self.base_url)
+            scrape_serie = self._get_scrapper_class()(self.base_url)
             scrape_serie.setup(series_name=media_item.slug, media_id=media_item.id)
             self.set_cached_scraper(media_item, scrape_serie)
         

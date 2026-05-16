@@ -6,7 +6,6 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.primevideo.scrapper import GetSerieInfo
 
 
 class PrimeVideoAPI(BaseStreamingAPI):
@@ -15,7 +14,15 @@ class PrimeVideoAPI(BaseStreamingAPI):
         self.site_name = "primevideo"
         self._load_config()
         self._search_fn = None
+        self._GetSerieInfo = None
         self.scrape_serie = None
+
+    def _get_serie_info_class(self):
+        """Lazy load the scrapper class so the API module doesn't crash if the service is missing."""
+        if self._GetSerieInfo is None:
+            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.scrapper")
+            self._GetSerieInfo = getattr(module, "GetSerieInfo")
+        return self._GetSerieInfo
     
     def _load_config(self):
         """Load site configuration."""
@@ -80,7 +87,7 @@ class PrimeVideoAPI(BaseStreamingAPI):
         
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
-            scrape_serie = GetSerieInfo(url=media_item.url)
+            scrape_serie = self._get_serie_info_class()(url=media_item.url)
             self.set_cached_scraper(media_item, scrape_serie)
         
         seasons_count = scrape_serie.getNumberSeason()

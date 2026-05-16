@@ -6,7 +6,6 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.realtime.scrapper import GetSerieInfo
 
 
 class NoveAPI(BaseStreamingAPI):
@@ -15,6 +14,13 @@ class NoveAPI(BaseStreamingAPI):
         self.site_name = "nove"
         self._load_config()
         self._search_fn = None
+        self._GetSerieInfo = None
+
+    def _get_serie_info_class(self):
+        if self._GetSerieInfo is None:
+            module = importlib.import_module(f"VibraVid.{get_folder_name()}.realtime.scrapper")
+            self._GetSerieInfo = getattr(module, "GetSerieInfo")
+        return self._GetSerieInfo
     
     def _load_config(self):
         """Load site configuration."""
@@ -78,7 +84,7 @@ class NoveAPI(BaseStreamingAPI):
         # Try to get from cache first
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
-            scrape_serie = GetSerieInfo(media_item.url)
+            scrape_serie = self._get_serie_info_class()(media_item.url)
             self.set_cached_scraper(media_item, scrape_serie)
 
         scrape_serie.getNumberSeason()
