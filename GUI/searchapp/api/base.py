@@ -11,7 +11,7 @@ from VibraVid.utils import config_manager
 class Entries:
     """Standardized media item representation."""
     name: str
-    type: str  # 'film', 'series', 'ova', etc.
+    type: str  # 'film', 'series', 'ova', 'song', 'album', etc.
     slug: str = None
     id: Any = None
     path_id: Optional[str] = None
@@ -21,10 +21,19 @@ class Entries:
     provider_language: Optional[str] = None
     tmdb_id: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
-    
+    audio_format: Optional[str] = None  # 'flac' | 'mp3' — set by GUI for music services
+
     @property
     def is_movie(self) -> bool:
         return self.type.lower() in ['film', 'movie', 'ova']
+
+    @property
+    def is_song(self) -> bool:
+        return str(self.type or "").lower() in ['song', 'track', 'music']
+
+    @property
+    def is_album(self) -> bool:
+        return str(self.type or "").lower() == 'album'
 
 
 @dataclass

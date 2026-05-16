@@ -28,8 +28,10 @@ def download_song(select_title: Entries) -> str | None:
     start_message()
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name}\n")
 
-    # ── Resolve track metadata 
-    track = TrackInfo(select_title.url)
+    # ── Resolve track metadata. The GUI may attach an `audio_format` attribute
+    # to the Entries instance (e.g. "flac" or "mp3") to override the default.
+    requested_format = getattr(select_title, "audio_format", None)
+    track = TrackInfo(select_title.url, audio_format=requested_format)
     track.fetch()
 
     if not track.stream_url:

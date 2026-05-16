@@ -2,17 +2,19 @@
 
 import logging
 
-from .client import JumoClient
+from .client import JumoClient, resolve_format_id
 
 
 logger = logging.getLogger(__name__)
 
 
 class TrackInfo:
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, audio_format=None) -> None:
         self.url = str(url).strip()
         self.client = JumoClient()
         self._track_id: int | None = self._parse_id(self.url)
+        # audio_format may be a string ('flac' / 'mp3'), an int, or None (→ default).
+        self._format_id: int = resolve_format_id(audio_format)
 
         # Metadata populated after fetch()
         self.title: str = ""
@@ -41,8 +43,8 @@ class TrackInfo:
         if self._track_id is None:
             raise ValueError(f"Cannot parse track id from url: {self.url!r}")
 
-        logger.debug(f"Fetching info for track id {self._track_id}")
-        data = self.client.fetch_stream(self._track_id)
+        logger.debug(f"Fetching info for track id {self._track_id} with format_id={self._format_id}")
+        data = self.client.fetch_stream(self._track_id, format_id=self._format_id)
         self._process_data(data)
 
     def _process_data(self, data: dict) -> None:
