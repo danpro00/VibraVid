@@ -24,6 +24,23 @@ PROJECT_ROOT = BASE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Database location: prefer DJANGO_DB_DIR (set in Docker), fall back to the
+# legacy in-app path so local dev keeps working.
+_DB_DIR = Path(os.environ.get("DJANGO_DB_DIR") or BASE_DIR)
+try:
+    _DB_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    _DB_DIR = BASE_DIR
+# One-shot migration: lift an existing legacy DB into the new location.
+_LEGACY_DB = BASE_DIR / "db.sqlite3"
+_NEW_DB = _DB_DIR / "db.sqlite3"
+if _DB_DIR != BASE_DIR and _LEGACY_DB.exists() and not _NEW_DB.exists():
+    try:
+        import shutil as _shutil
+        _shutil.copy2(_LEGACY_DB, _NEW_DB)
+    except Exception:
+        pass
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key")
 DEBUG = _env_flag("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", "*") or ["*"]
@@ -73,7 +90,7 @@ WSGI_APPLICATION = "webgui.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": _NEW_DB,
     }
 }
 

@@ -19,18 +19,21 @@ services:
     
     ### Volumes - Persistent Data
     volumes:
-      # Database persistence
-      - vibravid_db:/app/GUI
-      # Downloads persistence  
+      # Database + uploaded service plugins persistence (isolated dir, does NOT overlay app code)
+      - vibravid_db:/app/data
+      # Uploaded service plugins persist across rebuilds
+      - vibravid_services:/app/VibraVid/services
+      # Downloads persistence
       - vibravid_videos:/app/Video
       # Logs persistence
       - vibravid_logs:/app/logs
       # Configuration persistence
       - vibravid_config:/app/Conf
-    
+
     ### Environment Variables
     environment:
       DJANGO_DEBUG: "false"
+      DJANGO_DB_DIR: "/app/data"
       DJANGO_SECRET_KEY: "change-me-to-a-secure-key"
       PYTHONUNBUFFERED: "1"
       PYTHONPATH: "/app:${PYTHONPATH}"
@@ -66,6 +69,8 @@ services:
 ### Persistent Named Volumes
 volumes:
   vibravid_db:
+    driver: local
+  vibravid_services:
     driver: local
   vibravid_videos:
     driver: local
