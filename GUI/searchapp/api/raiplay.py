@@ -6,6 +6,7 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
+from VibraVid.services.raiplay.scrapper import GetSerieInfo
 
 
 class RaiPlayAPI(BaseStreamingAPI):
@@ -14,14 +15,7 @@ class RaiPlayAPI(BaseStreamingAPI):
         self.site_name = "raiplay"
         self._load_config()
         self._search_fn = None
-        self._GetSerieInfo = None
         self.scrape_serie = None
-
-    def _get_serie_info_class(self):
-        if self._GetSerieInfo is None:
-            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.scrapper")
-            self._GetSerieInfo = getattr(module, "GetSerieInfo")
-        return self._GetSerieInfo
     
     def _load_config(self):
         """Load site configuration."""
@@ -91,7 +85,7 @@ class RaiPlayAPI(BaseStreamingAPI):
 
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
-            scrape_serie = self._get_serie_info_class()(path_id)
+            scrape_serie = GetSerieInfo(path_id)
             scrape_serie.collect_info_title()
             self.set_cached_scraper(media_item, scrape_serie)
         

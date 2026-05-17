@@ -6,6 +6,7 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
+from VibraVid.services.cinezo.scrapper import GetSerieInfo
 
 
 class CinezoAPI(BaseStreamingAPI):
@@ -13,19 +14,12 @@ class CinezoAPI(BaseStreamingAPI):
         super().__init__()
         self.site_name  = "cinezo"
         self._search_fn = None
-        self._GetSerieInfo = None
 
     def _get_search_fn(self):
         if self._search_fn is None:
             module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}")
             self._search_fn = getattr(module, "search")
         return self._search_fn
-
-    def _get_serie_info_class(self):
-        if self._GetSerieInfo is None:
-            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}.scrapper")
-            self._GetSerieInfo = getattr(module, "GetSerieInfo")
-        return self._GetSerieInfo
 
     def search(self, query: str) -> List[Entries]:
         search_fn = self._get_search_fn()
@@ -53,7 +47,7 @@ class CinezoAPI(BaseStreamingAPI):
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
             tmdb_id = int(media_item.id or 0)
-            scrape_serie = self._get_serie_info_class()(tmdb_id, media_item.name or '')
+            scrape_serie = GetSerieInfo(tmdb_id, media_item.name or '')
             self.set_cached_scraper(media_item, scrape_serie)
 
         count = scrape_serie.getNumberSeason()

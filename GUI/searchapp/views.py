@@ -1122,114 +1122,16 @@ def watchlist_status(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"last_checked": 0, "items_count": 0})
 
 
-def _build_gui_api_stub(svc_name: str, class_name: str) -> str:
-    """Generate a generic, lazy-loading GUI API stub for an uploaded service."""
-    return f'''# Auto-generated GUI API stub for service "{svc_name}"
-
-import importlib
-from typing import List, Optional
-
-from .base import BaseStreamingAPI, Entries, Season, Episode
-
-from VibraVid.services._base.site_loader import get_folder_name
-
-
-class {class_name}(BaseStreamingAPI):
-    def __init__(self):
-        super().__init__()
-        self.site_name = "{svc_name}"
-        self._search_fn = None
-        self._GetSerieInfo = None
-
-    def _get_search_fn(self):
-        if self._search_fn is None:
-            module = importlib.import_module(f"VibraVid.{{get_folder_name()}}.{{self.site_name}}")
-            self._search_fn = getattr(module, "search")
-        return self._search_fn
-
-    def _get_serie_info_class(self):
-        if self._GetSerieInfo is None:
-            try:
-                module = importlib.import_module(f"VibraVid.{{get_folder_name()}}.{{self.site_name}}.scrapper")
-                self._GetSerieInfo = getattr(module, "GetSerieInfo", None)
-            except ImportError:
-                self._GetSerieInfo = None
-        return self._GetSerieInfo
-
-    def search(self, query: str) -> List[Entries]:
-        search_fn = self._get_search_fn()
-        database = search_fn(query, get_onlyDatabase=True)
-        results = []
-        if database and hasattr(database, "media_list"):
-            for element in list(database.media_list):
-                item_dict = element.__dict__.copy() if hasattr(element, "__dict__") else {{}}
-                results.append(Entries(
-                    id=item_dict.get("id") or item_dict.get("slug"),
-                    name=item_dict.get("name"),
-                    slug=item_dict.get("slug", ""),
-                    path_id=item_dict.get("path_id"),
-                    type=item_dict.get("type"),
-                    url=item_dict.get("url"),
-                    poster=item_dict.get("image"),
-                    year=item_dict.get("year"),
-                    tmdb_id=item_dict.get("tmdb_id"),
-                    provider_language=item_dict.get("provider_language"),
-                    raw_data=item_dict,
-                ))
-        return results
-
-    def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        if media_item.is_movie:
-            return None
-        cls = self._get_serie_info_class()
-        if cls is None:
-            return None
-        scrape_serie = self.get_cached_scraper(media_item)
-        if not scrape_serie:
-            try:
-                scrape_serie = cls(media_item.url)
-            except TypeError:
-                try:
-                    scrape_serie = cls(url=media_item.url)
-                except Exception:
-                    return None
-            self.set_cached_scraper(media_item, scrape_serie)
-        try:
-            seasons_count = scrape_serie.getNumberSeason()
-        except Exception:
-            return None
-        if not seasons_count:
-            return None
-        seasons = []
-        for s in scrape_serie.seasons_manager.seasons:
-            episodes_raw = scrape_serie.getEpisodeSeasons(s.number) or []
-            episodes = []
-            for idx, ep in enumerate(episodes_raw, 1):
-                ep_num = (ep.get("number") if isinstance(ep, dict) else getattr(ep, "number", idx)) or idx
-                ep_name = ep.get("name") if isinstance(ep, dict) else getattr(ep, "name", None)
-                ep_id = ep.get("id") if isinstance(ep, dict) else getattr(ep, "id", idx)
-                episodes.append(Episode(number=ep_num, name=ep_name or f"Episodio {{idx}}", id=ep_id))
-            seasons.append(Season(number=s.number, episodes=episodes, name=getattr(s, "name", None)))
-        return seasons or None
-
-    def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        search_fn = self._get_search_fn()
-        selections = None
-        if season or episodes:
-            selections = {{"season": season, "episode": episodes}}
-        scrape_serie = self.get_cached_scraper(media_item)
-        search_fn(direct_item=media_item.raw_data, selections=selections, scrape_serie=scrape_serie)
-        return True
-'''
-
-
 @require_http_methods(["POST"])
 @csrf_exempt
 def upload_service_zip(request: HttpRequest) -> JsonResponse:
     """
     Handle ZIP file upload to install a new service plugin.
     Extracts the ZIP into VibraVid/services/, validates the structure,
-    creates a GUI API stub, and reloads the service registry.
+    and reloads the service registry. A uploaded service will only appear in
+    the GUI dropdown if a matching static stub exists in
+    GUI/searchapp/api/<service_name>.py — uploaded plugins are expected to
+    ship that stub themselves (no auto-generation: explicit > implicit).
     """
     uploaded = request.FILES.get("service_zip")
     if not uploaded:
@@ -1364,10 +1266,10 @@ def upload_service_zip(request: HttpRequest) -> JsonResponse:
             shutil.copytree(svc_path, dest_path)
             installed_services.append(svc_name)
 
-            # No GUI stub file needed: _initialize_registry() auto-discovers
-            # services in VibraVid/services/ and builds an in-memory stub for
-            # any service without a static GUI api file. This keeps the GUI
-            # directory immutable and avoids triggering Django's auto-reloader.
+            # Note: the GUI dropdown lists services that have a matching
+            # static stub in GUI/searchapp/api/<svc_name>.py. Uploaded
+            # plugins are expected to ship their own stub — we do not
+            # auto-generate one (explicit is better than implicit).
 
         # Reload the service registries
         if installed_services:
