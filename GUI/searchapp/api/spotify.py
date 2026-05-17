@@ -1,4 +1,4 @@
-# 16.05.26
+# 17.04.26
 
 import importlib
 from typing import List, Optional
@@ -6,70 +6,68 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season
 
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.spotify.scrapper import TrackInfo
 
 
 class SpotifyAPI(BaseStreamingAPI):
-    def __init__(self):
-        super().__init__()
-        self.site_name = "spotify"
-        self._search_fn = None
+	def __init__(self):
+		super().__init__()
+		self.site_name = "spotify"
+		self._load_config()
+		self._search_fn = None
 
-    def _get_search_fn(self):
-        """Lazy load the search function."""
-        if self._search_fn is None:
-            module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}")
-            self._search_fn = getattr(module, "search")
-        return self._search_fn
+	def _load_config(self):
+		"""Load site configuration."""
+		self.base_url = None
 
-    def search(self, query: str) -> List[Entries]:
-        """Search for tracks on Spotify (via Jumo)."""
-        search_fn = self._get_search_fn()
-        database = search_fn(query, get_onlyDatabase=True)
+	def _get_search_fn(self):
+		"""Lazy-load the service search function from the services package."""
+		if self._search_fn is None:
+			module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}")
+			self._search_fn = getattr(module, "search")
+		return self._search_fn
 
-        results = []
-        if database and hasattr(database, "media_list"):
-            for element in list(database.media_list):
-                item_dict = element.__dict__.copy() if hasattr(element, "__dict__") else {}
+	def search(self, query: str) -> List[Entries]:
+		"""Search for tracks and return a list of `Entries` for the GUI."""
+		search_fn = self._get_search_fn()
+		database = search_fn(query, get_onlyDatabase=True)
 
-                media_item = Entries(
-                    id=item_dict.get("id") or item_dict.get("slug"),
-                    name=item_dict.get("name"),
-                    slug=item_dict.get("slug", ""),
-                    type=item_dict.get("type", "song"),
-                    url=item_dict.get("url"),
-                    poster=item_dict.get("image"),
-                    year=item_dict.get("year"),
-                    raw_data=item_dict,
-                )
-                results.append(media_item)
+		results: List[Entries] = []
+		if database and hasattr(database, "media_list"):
+			items = list(database.media_list)
+			for element in items:
+				item_dict = element.__dict__.copy() if hasattr(element, "__dict__") else {}
 
-        return results
+				media_item = Entries(
+					id=item_dict.get("id"),
+					name=item_dict.get("name"),
+					slug=item_dict.get("slug", ""),
+					path_id=item_dict.get("path_id"),
+					type=item_dict.get("type", "song"),
+					url=item_dict.get("url"),
+					poster=item_dict.get("image"),
+					year=item_dict.get("year"),
+					tmdb_id=item_dict.get("tmdb_id"),
+					raw_data=item_dict,
+				)
+				results.append(media_item)
 
-    def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        """Spotify deals only with single tracks here, no seasons/episodes."""
-        return None
+		return results
 
-    def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None, audio_format: Optional[str] = None) -> bool:
-        """
-        Start downloading a song from Spotify (Jumo).
+	def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
+		"""Spotify is for single tracks — no series metadata."""
+		return None
 
-        audio_format ('flac' | 'mp3') is forwarded to the backend via the
-        selections dict so download_song can pick the right Jumo format_id.
-        """
-        search_fn = self._get_search_fn()
+	def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
+		"""Start a download for a selected track by delegating to the service.
 
-        selections = {}
-        # Pass season/episode only if non-empty (kept for API symmetry).
-        if season or episodes:
-            selections["season"] = season
-            selections["episode"] = episodes
-        # GUI form override (FLAC/MP3 dropdown). Fall back to whatever
-        # attribute the Entries instance was tagged with by the dispatcher.
-        af = audio_format or getattr(media_item, "audio_format", None)
-        if af:
-            selections["audio_format"] = af
+		The services layer expects `direct_item` and optional `selections`.
+		"""
+		search_fn = self._get_search_fn()
 
-        scrape_serie = self.get_cached_scraper(media_item)
-        search_fn(direct_item=media_item.raw_data, selections=(selections or None), scrape_serie=scrape_serie)
-        return True
+		selections = None
+		if season or episodes:
+			selections = {"season": season, "episode": episodes}
+
+		scrape_serie = self.get_cached_scraper(media_item)
+		search_fn(direct_item=media_item.raw_data, selections=selections, scrape_serie=scrape_serie)
+		return True
