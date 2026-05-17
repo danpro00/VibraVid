@@ -35,4 +35,5 @@ urlpatterns = [
     path("api/save-settings/", views.save_settings, name="save_settings"),
     path("api/reload-config/", views.reload_config, name="reload_config"),
     path("api/upload-service/", views.upload_service_zip, name="upload_service_zip"),
+    path("api/registry-status/", views.registry_status, name="registry_status"),
 ]

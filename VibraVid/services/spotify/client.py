@@ -10,8 +10,26 @@ from VibraVid.utils.http_client import create_client, get_userAgent
 logger = logging.getLogger(__name__)
 BASE_URL = "https://jumo-dl.pages.dev"
 REGION = "FR"
-FORMAT_ID = 27   
-# 27 = FLAC; 6 = MP3 320
+
+# Jumo audio format IDs. 27 = FLAC; 6 = MP3 320.
+FORMAT_FLAC = 27
+FORMAT_MP3  = 6
+FORMAT_ID = FORMAT_FLAC
+
+FORMAT_NAME_TO_ID = {
+    "flac":    FORMAT_FLAC,
+    "mp3":     FORMAT_MP3,
+    "mp3_320": FORMAT_MP3,
+}
+
+
+def resolve_format_id(value) -> int:
+    """Accept either an int (passthrough) or a name ('flac'/'mp3') and return the Jumo format_id."""
+    if value is None or value == "":
+        return FORMAT_ID
+    if isinstance(value, int):
+        return value
+    return FORMAT_NAME_TO_ID.get(str(value).strip().lower(), FORMAT_ID)
 
 
 def format_duration(seconds: int) -> str:

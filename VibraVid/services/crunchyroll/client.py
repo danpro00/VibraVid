@@ -251,7 +251,7 @@ class CrunchyrollClient:
         self.refresh_token = result.get('refresh_token') or self.refresh_token
         
         expires_in = int(result.get('expires_in', 3600) or 3600)
-        self._set_expires_at(expiresIn=expires_in)
+        self._set_expires_at(expires_in=expires_in)
         self._save_token_cache()
 
     def _ensure_token(self) -> None:

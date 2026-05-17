@@ -120,20 +120,51 @@
           
           <!-- Action Buttons -->
           <div class="flex gap-2">
-            {% if result.is_movie %}
+            {% if result.is_song %}
+
+            <!-- Download Song Button (with audio format selector) -->
+            <form
+              id="download-form-{{ forloop.counter }}"
+              action="{% url 'start_download' %}"
+              method="post"
+              class="flex-1 flex gap-2"
+            >
+              {% csrf_token %}
+              <input type="hidden" name="source_alias" value="{{ result.source_alias }}">
+              <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
+              <select
+                name="audio_format"
+                class="bg-black/60 border border-gray-700 text-white text-xs font-bold rounded-md px-2 py-2.5 focus:border-red-500 focus:outline-none cursor-pointer"
+                title="Formato audio"
+              >
+                <option value="flac" selected>FLAC</option>
+                <option value="mp3">MP3 320</option>
+              </select>
+              <button
+                type="submit"
+                class="flex-1 py-2.5 bg-white hover:bg-gray-200 text-black font-bold text-xs rounded-md transition-all flex items-center justify-center gap-2 shadow-xl"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                </svg>
+                Scarica
+              </button>
+            </form>
+
+            {% elif result.is_movie %}
 
             <!-- Download Movie Button -->
-            <form 
+            <form
               id="download-form-{{ forloop.counter }}"
-              action="{% url 'start_download' %}" 
-              method="post" 
+              action="{% url 'start_download' %}"
+              method="post"
               class="flex-1"
             >
               {% csrf_token %}
               <input type="hidden" name="source_alias" value="{{ result.source_alias }}">
               <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 class="w-full py-2.5 bg-white hover:bg-gray-200 text-black font-bold text-xs rounded-md transition-all flex items-center justify-center gap-2 shadow-xl"
               >
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -150,8 +181,8 @@
               <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
               <input type="hidden" name="search_query" value="{{ query }}">
               <input type="hidden" name="search_site" value="{{ selected_site }}">
-              <button 
-                type="submit" 
+              <button
+                type="submit"
                 class="py-2.5 px-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all flex items-center justify-center shadow-xl"
                 title="Aggiungi alla Watchlist"
               >

@@ -786,8 +786,11 @@ class StreamSelector:
                 if spec.select_all:
                     result.select_all = True
                 return result
-            logger.info(f"StreamSelector audio: lang={spec.langs!r} — no match, dropping")
-            result.drop = True
+            logger.info(f"StreamSelector audio: lang={spec.langs!r} — no match, falling back to best available")
+            self._mark_best_per_lang(audios, spec.select_best)
+            selected = [s for s in audios if s.selected]
+            result.streams = self._apply_default_filter(selected, spec)
+            result.matched_ids = _collect_ids(result.streams)
             return result
 
         # No constraint: select best per lang across all available languages

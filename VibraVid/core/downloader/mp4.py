@@ -134,7 +134,7 @@ class DRMProbe:
     def _report(scheme: Optional[str], kid: Optional[str], drm_names: list) -> None:
         label = ", ".join(drm_names) if drm_names else "unknown DRM"
         logger.info(f"DRMProbe: encryption detected — scheme={scheme or 'unknown'}, kid={kid or 'n/a'}, DRM=[{label}]")
-        console.print(f"[dim]Probe:[/dim] [yellow]Encrypted[/yellow] — scheme=[magenta]{scheme or 'unknown'}[/magenta] DRM=[cyan]{label}[/cyan]")
+        console.print(f"[cyan]Probe: [magenta]Encrypted [white]| [cyan]scheme: [magenta]{scheme or 'unknown'} [white]| [cyan]DRM: [magenta]{label}")
 
 
 class PostDownloadDecryptor:
@@ -187,7 +187,6 @@ class PostDownloadDecryptor:
                 try:
                     os.replace(dec_path, path)
                     logger.info(f"PostDownloadDecryptor: success → {os.path.basename(path)}")
-                    console.print(f"[green]Decryption successful: {os.path.basename(path)}")
                 except Exception as exc:
                     logger.error(f"PostDownloadDecryptor: rename failed — {exc}")
                     console.print(f"[red]Decryption rename failed: {exc}")
@@ -241,7 +240,7 @@ class PostDownloadDecryptor:
 
         if not found:
             logger.warning(f"PostDownloadDecryptor: KID [{kid}] from probe not found among provided keys — decryption may fail.")
-            console.print(f"[yellow]Warning:[/yellow] KID [cyan]{kid}[/cyan] extracted from the file is [red]not present[/red] in the provided keys — decryption may fail.")
+            console.print(f"[yellow]Warning:[/yellow] KID [cyan]{kid}[/cyan] missing — decryption may fail.")
 
 
 class SupaTracker:
@@ -396,7 +395,7 @@ class MP4FileDownloader:
 
         if encrypted:
             if not PostDownloadDecryptor.has_keys(self.key):
-                console.print("[red]Warning:[/red] stream appears [yellow]encrypted[/yellow] ([cyan]{', '.join(drm_names) or 'unknown DRM'}[/cyan]) but [red]no decryption keys[/red] were provided — the downloaded file will remain encrypted.")
+                console.print(f"[red]Warning:[/red] stream appears [red]encrypted[/red] ([cyan]{', '.join(drm_names) or 'unknown DRM'}[/cyan]) but [red]no decryption keys[/red] were provided — the downloaded file will remain encrypted.")
                 logger.warning(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) but no keys provided.")
             else:
                 logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — keys present, will decrypt after download.")

@@ -65,6 +65,13 @@ def process_search_result(select_title, selections=None, scrape_serie=None):
         console.print("[yellow]No title selected.")
         return False
 
+    # base_process_search_result for type "song" does NOT pass selections to
+    # download_film_func — so we stash audio_format on the Entries instance
+    # itself. The metaclass on Entries lets us set arbitrary attributes that
+    # download_song will read later via getattr.
+    if selections and selections.get("audio_format"):
+        select_title.audio_format = selections.get("audio_format")
+
     return base_process_search_result(
         select_title=select_title,
         download_film_func=download_song,

@@ -42,3 +42,4 @@ class DownloadForm(forms.Form):
     item_payload = forms.CharField(widget=forms.HiddenInput, required=False)
     season = forms.CharField(max_length=100, required=False, label="Stagione")
     episode = forms.CharField(max_length=1000, required=False, label="Episodio (es: 1-3)")
+    audio_format = forms.CharField(max_length=16, required=False, label="Formato audio")
