@@ -196,8 +196,6 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     client = scrape_serie.client
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
-    # Define filename and path. Crunchyroll content is anime/animation so it
-    # belongs in ANIME_FOLDER, consistent with AnimeUnity and AnimeWorld.
     path_components, filename = map_episode_path(scrape_serie.series_name, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
     title_path = os_manager.get_sanitize_path(os.path.join(site_constants.ANIME_FOLDER, *path_components))
     title_name = f"{filename}.{extension_output}"
