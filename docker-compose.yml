@@ -19,16 +19,23 @@ services:
     
     ### Volumes - Persistent Data
     volumes:
-      # Database + uploaded service plugins persistence (isolated dir, does NOT overlay app code)
+      # SQLite DB + any future per-install state (isolated dir, does NOT overlay app code)
       - vibravid_db:/app/data
-      # Uploaded service plugins persist across rebuilds
-      - vibravid_services:/app/VibraVid/services
-      # Downloads persistence
+      # Downloads persistence (named volume; override locally with a bind mount
+      # in docker-compose.override.yml if you want the files visible on the host)
       - vibravid_videos:/app/Video
       # Logs persistence
       - vibravid_logs:/app/logs
       # Configuration persistence
       - vibravid_config:/app/Conf
+      # NOTE: /app/VibraVid/services is INTENTIONALLY NOT a named volume.
+      # If it were, the volume would freeze the services directory to the
+      # snapshot captured the first time the container started, and any
+      # bugfix to a service's code in a later image rebuild would be hidden
+      # behind the stale volume content. Tradeoff: plugins uploaded via
+      # the web UI live only inside the container's writable layer and are
+      # lost on container recreation (down/up --build). Re-upload after
+      # rebuilds, or bake the plugin into your fork of the repo.
 
     ### Environment Variables
     environment:
@@ -69,8 +76,6 @@ services:
 ### Persistent Named Volumes
 volumes:
   vibravid_db:
-    driver: local
-  vibravid_services:
     driver: local
   vibravid_videos:
     driver: local
