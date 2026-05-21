@@ -143,8 +143,7 @@ class GetSerieInfo:
                     year=episode.get('year'),
                     duration=duration_minutes,
                     needs_login=episode.get('needs_login'),
-                    country=episode.get('country'),
-                    imdb_id=episode.get('imdb_id'),
+                    country=episode.get('country')
                 ))
 
         except Exception as e:

@@ -10,7 +10,6 @@ from VibraVid.services._base.tv_display_manager import map_movie_path
 from VibraVid.services._base import site_constants, Entries
 from VibraVid.services._base.tv_display_manager import map_episode_path
 from VibraVid.services._base.tv_download_manager import process_season_selection, process_episode_download
-from VibraVid.utils.tmdb_client import tmdb
 
 from VibraVid.core.downloader import HLS_Downloader
 
@@ -36,15 +35,7 @@ def download_film(select_title: Entries) -> str:
     start_message()
     console.print(f"[bold yellow]Download: [red]{site_constants.SITE_NAME}[/red] → [cyan]{select_title.name} \n")
 
-    imdb_id = select_title.imdb_id
-    if not imdb_id and select_title.id:
-        imdb_id = tmdb.get_movie_details(select_title.id).get("imdb_id")
-
-    if not imdb_id:
-        logger.error(f"No IMDB ID found for {select_title.name}")
-        return None
-
-    video_source = VidXgoVideoSource(imdb_id, content_type="movie")
+    video_source = VidXgoVideoSource(select_title.tmdb_id, content_type="movie")
     master_playlist = video_source.get_playlist()
 
     if not master_playlist:
@@ -86,18 +77,13 @@ def download_series(select_title: Entries, season_selection: str = None, episode
     """Handle downloading a complete series through VidXgo."""
     start_message()
     if scrape_serie is None:
-        scrape_serie = GetSerieInfo(select_title.id, select_title.name, select_title.imdb_id, select_title.year)
+        scrape_serie = GetSerieInfo(select_title.name, select_title.tmdb_id, select_title.year)
         scrape_serie.getNumberSeason()
-
-    imdb_id = select_title.imdb_id
-    if not imdb_id:
-        logger.error(f"No IMDB ID found for {select_title.name}")
-        return
 
     def download_episode_callback(season_number: int, download_all: bool, episode_selection: str = None):
         """Callback to handle episode downloads for a specific season"""
         def download_video_callback(obj_episode, season_idx, episode_idx):
-            video_source = VidXgoVideoSource(imdb_id, season_idx, episode_idx)
+            video_source = VidXgoVideoSource(select_title.tmdb_id, season_idx, episode_idx)
             return download_episode(obj_episode, season_idx, episode_idx, scrape_serie, video_source)
 
         process_episode_download(

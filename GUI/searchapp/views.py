@@ -31,7 +31,7 @@ from GUI.searchapp.api.base import Entries
 
 from VibraVid.core.ui.tracker import  download_tracker, context_tracker
 from VibraVid.utils import config_manager
-from VibraVid.utils.tmdb_client import tmdb_client
+from VibraVid.provider.tmdb import tmdb_client
 from VibraVid.cli.run import execute_hooks
 
 

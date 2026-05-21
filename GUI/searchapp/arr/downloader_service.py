@@ -506,11 +506,13 @@ class ArrDownloaderService:
             tmdb_titles = []
             if tmdb_id:
                 try:
-                    from VibraVid.utils.tmdb_client import tmdb_client as tmdb
+                    from VibraVid.provider.tmdb import tmdb_client as tmdb
+                    
                     # Get titles in Italian (for streamingcommunity) and English
                     for lang in ["it", "en"]:
                         alt_titles = tmdb.get_alternative_titles(tmdb_id, media_type, lang)
                         tmdb_titles.extend(alt_titles)
+                    
                     # Deduplicate
                     tmdb_titles = list(set(t.strip() for t in tmdb_titles if t.strip()))
                     logger.info(f"TMDB alternative titles for {tmdb_id}: {tmdb_titles[:5]}")
@@ -708,12 +710,14 @@ class ArrDownloaderService:
         # Fallback: get Italian title from TMDB if originalTitle is not set
         if tmdb_id and (not sonarr_original or sonarr_original.lower() == title.lower()):
             try:
-                from VibraVid.utils.tmdb_client import tmdb_client as tmdb
+                from VibraVid.provider.tmdb import tmdb_client as tmdb
                 details = tmdb._make_request(f"tv/{tmdb_id}", {"language": "it"})
                 it_title = details.get("name", "")
+
                 if it_title and it_title.lower() != title.lower():
                     logger.info(f"Using Italian title from TMDB: '{it_title}'")
                     return it_title
+                
             except Exception as tmdb_exc:
                 logger.debug(f"Failed to get Italian title from TMDB: {tmdb_exc}")
 
@@ -761,16 +765,15 @@ class ArrDownloaderService:
                                 .encode('ascii', 'ignore').decode('ascii'))
             if not ascii_part:
                 try:
-                    from VibraVid.utils.tmdb_client import tmdb_client as tmdb
+                    from VibraVid.provider.tmdb import tmdb_client as tmdb
                     for lang in ["it", "en"]:
                         details = tmdb._make_request(f"movie/{tmdb_id}", {"language": lang})
                         loc_title = details.get("title", "")
+                        
                         if loc_title and loc_title != original:
-                            logger.info(
-                                f"Non-ASCII original '{original}' → using {lang.upper()} "
-                                f"TMDB title: '{loc_title}'"
-                            )
+                            logger.info(f"Non-ASCII original '{original}' → using {lang.upper()} TMDB title: '{loc_title}'")
                             return loc_title
+                        
                 except Exception as tmdb_exc:
                     logger.debug(f"TMDB localised title fallback failed: {tmdb_exc}")
 

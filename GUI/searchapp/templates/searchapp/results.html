@@ -28,12 +28,12 @@
 
       <!-- Filter Controls -->
       <div class="mt-4 ml-14">
-        <div class="inline-flex rounded-md bg-black/30 p-1">
+        <div class="inline-flex rounded-lg bg-white/5 border border-white/10 p-1 gap-1">
           <button 
             id="filter-all" 
             type="button"
             onclick="filterResults('all')" 
-            class="px-3 py-1 text-sm font-semibold text-white"
+            class="filter-btn px-4 py-1.5 text-sm font-semibold rounded-md transition-all"
           >
             Tutti
           </button>
@@ -42,7 +42,7 @@
             id="filter-movies" 
             type="button"
             onclick="filterResults('movie')" 
-            class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white"
+            class="filter-btn px-4 py-1.5 text-sm font-medium rounded-md transition-all"
           >
             Film
           </button>
@@ -51,7 +51,7 @@
             id="filter-series" 
             type="button"
             onclick="filterResults('series')" 
-            class="px-3 py-1 text-sm font-medium text-gray-300 hover:text-white"
+            class="filter-btn px-4 py-1.5 text-sm font-medium rounded-md transition-all"
           >
             Serie
           </button>
@@ -276,6 +276,31 @@
       z-index: 20;
     }
   }
+
+  /* Filter button active state */
+  .filter-btn {
+    color: rgb(156 163 175); /* gray-400 */
+  }
+  .filter-btn.active {
+    background-color: rgb(220 38 38); /* red-600 */
+    color: white;
+    font-weight: 700;
+  }
+  .filter-btn:not(.active):hover {
+    color: white;
+    background-color: rgba(255,255,255,0.08);
+  }
+
+  /* Download click flash */
+  @keyframes downloadFlash {
+    0%   { opacity: 1; }
+    40%  { opacity: 0.5; }
+    100% { opacity: 1; }
+  }
+  .downloading {
+    animation: downloadFlash 0.5s ease;
+    pointer-events: none;
+  }
 </style>
 <script>
   function filterResults(filter) {
@@ -296,28 +321,16 @@
       countEl.textContent = `${visible} titoli trovati`;
     }
 
-    // Update active button styles
-    ['filter-all','filter-movies','filter-series'].forEach(id => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
-
-      const isActive =
-        (filter === 'all' && id === 'filter-all') ||
-        (filter === 'movie' && id === 'filter-movies') ||
-        (filter === 'series' && id === 'filter-series');
-
-      if (isActive) {
-        btn.classList.remove('text-gray-300', 'font-medium');
-        btn.classList.add('text-white', 'font-semibold');
-      } else {
-        btn.classList.remove('text-white', 'font-semibold');
-        btn.classList.add('text-gray-300', 'font-medium');
-      }
+    // Update active button state
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.remove('active');
     });
+    const activeMap = { all: 'filter-all', movie: 'filter-movies', series: 'filter-series' };
+    const activeBtn = document.getElementById(activeMap[filter]);
+    if (activeBtn) activeBtn.classList.add('active');
   }
 
   function handleCardClick(event, card) {
-    // Evita che il click sui bottoni, link o form venga intercettato dalla card
     if (
       event.target.closest('button') ||
       event.target.closest('a') ||
@@ -331,17 +344,17 @@
     if (actionType === 'download') {
       const formId = card.dataset.formId;
       const form = document.getElementById(formId);
-
       if (form) {
+        // Visual feedback: flash the card
+        card.classList.add('downloading');
+        setTimeout(() => card.classList.remove('downloading'), 600);
         form.submit();
       }
-
       return;
     }
 
     if (actionType === 'details') {
       const detailUrl = card.dataset.detailUrl;
-
       if (detailUrl) {
         window.location.href = detailUrl;
       }

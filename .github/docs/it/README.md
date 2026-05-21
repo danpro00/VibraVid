@@ -64,7 +64,6 @@ Installa e avvia con **pip** o **uv**:
 ```bash
 pip install -r requirements.txt   # installa
 python manual.py                  # avvia
-python update.py                  # aggiorna
 pip install -r requirements.txt --upgrade  # aggiorna dipendenze
 ```
 
@@ -72,7 +71,6 @@ pip install -r requirements.txt --upgrade  # aggiorna dipendenze
 ```bash
 uv sync              # installa
 uv run manual.py     # avvia
-uv run update.py     # aggiorna
 uv sync --upgrade    # aggiorna dipendenze
 ```
 
@@ -606,29 +604,6 @@ Esegui script personalizzati in punti specifici del ciclo di download. Gli hook 
 | `{stage}` | Stage corrente dell'hook |
 
 Gli stessi valori sono esposti come variabili d'ambiente con prefisso `SC_` (es. `SC_DOWNLOAD_PATH`, `SC_DOWNLOAD_SUCCESS`, `SC_HOOK_STAGE`).
-
----
-
-### Aggiornamento sorgente (`update.py`)
-
-```bash
-# Aggiornamento interattivo
-python update.py
-
-# Salta il primo prompt di conferma
-python update.py -y
-
-# Annulla automaticamente senza prompt
-python update.py -n
-
-# Anteprima di ciò che verrebbe eliminato senza eliminare nulla
-python update.py --dry-run
-
-# Combinazione: salta primo prompt + dry run
-python update.py -y --dry-run
-```
-
-Vengono **sempre preservati** durante un aggiornamento: cartelle `Video`, `Conf`, `.git` e file `update.py`.
 
 ---
 

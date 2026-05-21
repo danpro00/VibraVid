@@ -8,7 +8,8 @@ from typing import List
 from rich.console import Console
 from rich.prompt import Prompt
 
-from VibraVid.utils import config_manager, os_manager, tmdb_client
+from VibraVid.utils import config_manager, os_manager
+from VibraVid.provider.tmdb import tmdb_client
 from VibraVid.utils.console import TVShowManager
 
 

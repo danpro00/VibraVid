@@ -172,14 +172,7 @@ def update():
         pass
     
     logger.info(f"Execution mode: {get_execution_mode()}, System: {binary_paths._detect_system()}, Version: {current_version}, Latest: {last_version}, Country: {country_code}")
-    console.print(
-        f"\n[#FFD60A]{get_execution_mode()} [white]- [#E63946]{binary_paths._detect_system()} [white]- [#06A77D]Version: [#FFD60A]{current_version} [white]- [#E63946]Country: [#FFD60A]{country_code if country_code else 'None'}"
-        f"\n"
-        f"  [#00BCD4]Help the repository grow today by leaving a [#FFD60A]star [#00BCD4]and [#FFD60A]sharing "
-        f"[#00BCD4]it with others online!\n"
-        f"      [#9D4EDD]If you'd like to [#FFD60A]support[#9D4EDD] development and keep the program updated, consider leaving a "
-        f"[#FFD60A]donation[#9D4EDD]. Thank you!"
-    )
+    console.print(f"      [green]{get_execution_mode()} [white]\\ [red]{current_version} [white]\\ [purple]{country_code if country_code else 'None'}")
 
     if str(current_version).lower().replace("v.", "").replace("v", "") != str(last_version).lower().replace("v.", "").replace("v", ""):
         if last_version == "Unknown" or last_version == "Beta Build":

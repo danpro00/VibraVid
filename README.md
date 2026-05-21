@@ -64,7 +64,6 @@ Then install and run with either **pip** or **uv**:
 ```bash
 pip install -r requirements.txt   # install
 python manual.py                  # run
-python update.py                  # update
 pip install -r requirements.txt --upgrade  # sync deps
 ```
 
@@ -72,7 +71,6 @@ pip install -r requirements.txt --upgrade  # sync deps
 ```bash
 uv sync              # install
 uv run manual.py     # run
-uv run update.py     # update
 uv sync --upgrade    # sync deps
 ```
 
@@ -841,29 +839,6 @@ Execute custom scripts at specific points in the download lifecycle. Hooks are c
 | `{stage}` | Current hook stage |
 
 The same values are also exposed as environment variables with the `SC_` prefix (e.g. `SC_DOWNLOAD_PATH`, `SC_DOWNLOAD_SUCCESS`, `SC_HOOK_STAGE`).
-
----
-
-### Source Code Update (`update.py`)
-
-```bash
-# Interactive update
-python update.py
-
-# Skip first confirmation prompt
-python update.py -y
-
-# Cancel automatically without prompting
-python update.py -n
-
-# Preview what would be deleted without deleting anything
-python update.py --dry-run
-
-# Combine: skip first prompt + dry run
-python update.py -y --dry-run
-```
-
-The following are **always preserved** during an update: folders `Video`, `Conf`, `.git` and file `update.py`.
 
 ---
 

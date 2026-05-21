@@ -1,6 +1,6 @@
 {
-    "TMDB": {
-        "api_key": ""
+    "Provider": {
+        "tmdb": ""
     },
     "crunchyroll": {
         "device_id": "",

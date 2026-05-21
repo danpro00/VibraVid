@@ -3,18 +3,17 @@
 import logging
 
 from VibraVid.services._base.object import SeasonManager, Episode, Season
-from VibraVid.utils.tmdb_client import tmdb
+from VibraVid.provider.tmdb import tmdb
 
 
 logger = logging.getLogger(__name__)
 
 
 class GetSerieInfo:
-    def __init__(self, tmdb_id: int, series_name: str, imdb_id: str = None, year: int = None):
+    def __init__(self, series_name: str, tmdb_id: str = None, year: int = None):
         self.tmdb_id = tmdb_id
         self.series_name = series_name
         self.series_display_name = series_name
-        self.imdb_id = imdb_id
         self.year = year
         self.seasons_manager = SeasonManager()
         self._loaded = False

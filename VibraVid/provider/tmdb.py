@@ -14,8 +14,7 @@ from VibraVid.utils.http_client import create_client, get_headers
 
 console = Console()
 logger = logging.getLogger(__name__)
-api_key = config_manager.login.get("TMDB", "api_key")
-MAX_SEARCH_RESULTS = 9
+api_key = config_manager.login.get("Provider", "tmdb", default=None)
 
 
 class TMDBClient:
@@ -184,7 +183,6 @@ class TMDBClient:
                 return f"https://image.tmdb.org/t/p/{size}{backdrop_path}"
             
         except Exception as e:
-            console.log(f"[red]Error getting backdrop for {media_type} {tmdb_id}: {e}[/red]")
             logger.error(f"Error getting backdrop for {media_type} {tmdb_id}: {e}")
 
         return None
@@ -198,18 +196,6 @@ class TMDBClient:
             return results[0]['id']
         return None
 
-    def get_movie_details(self, tmdb_id: int):
-        """
-        Get movie details including title and IMDB ID.
-        """
-        details = self._make_request(f"movie/{tmdb_id}", {"language": "it", "append_to_response": "external_ids"})
-        logger.info(f"Got details for movie ID {tmdb_id}: {details.get('title')} (IMDB ID: {details.get('imdb_id')})")
-
-        return {
-            'title': details.get('title'),
-            'imdb_id': details.get('imdb_id')
-        }
-
     def search_movies(self, query: str, language_preference: str = "it"):
         """
         Search for movies and return a list of results with details.
@@ -220,27 +206,21 @@ class TMDBClient:
             - language_preference (str): Language preference (default: "it")
             
         Returns:
-            - list: List of dicts containing movie info (id, title, release_date, imdb_id, popularity)
+            - list: List of dicts containing movie info (id, title, release_date)
         """
-        results = self._make_request(
-            "search/movie", {"query": query, "language": language_preference}
-        ).get("results", [])
+        results = self._make_request("search/movie", {"query": query, "language": language_preference}).get("results", [])
         logger.info(f"Found {len(results)} movie results for query '{query}'")
 
         movies = []
-        for movie in results[:MAX_SEARCH_RESULTS]:
-            details = self._make_request(f"movie/{movie.get('id')}", {"language": language_preference, "append_to_response": "external_ids"})
-            imdb_id = details.get('imdb_id')
+        for movie in results:
+            logger.info(f"Movie ID {movie.get('id')} - '{movie.get('title')}'.")
             
-            if imdb_id:
-                movies.append({
-                    'id': movie.get('id'),
-                    'title': movie.get('title'),
-                    'release_date': movie.get('release_date'),
-                    'popularity': movie.get('popularity'),
-                    'poster_path': movie.get('poster_path'),
-                    'imdb_id': imdb_id
-                })
+            movies.append({
+                'id': movie.get('id'),
+                'title': movie.get('title'),
+                'release_date': movie.get('release_date'),
+                'poster_path': movie.get('poster_path'),
+            })
         
         return movies
 
@@ -253,26 +233,20 @@ class TMDBClient:
             - language_preference (str): Language preference (default: "it")
 
         Returns:
-            - list: List of dicts containing series info (id, name, first_air_date, popularity)
+            - list: List of dicts containing series info (id, name, first_air_date)
         """
         results = self._make_request("search/tv", {"query": query, "language": language_preference}).get("results", [])
         logger.info(f"Found {len(results)} TV results for query '{query}'")
 
         series = []
-        for show in results[:MAX_SEARCH_RESULTS]:
-            details = self._make_request(f"tv/{show.get('id')}/external_ids", {"language": language_preference})
-            imdb_id = details.get('imdb_id')
-
-            if not imdb_id:
-                continue
+        for show in results:
+            logger.info(f"TV ID {show.get('id')} - '{show.get('name')}'")
 
             series.append({
                 'id': show.get('id'),
                 'name': show.get('name'),
                 'first_air_date': show.get('first_air_date'),
-                'popularity': show.get('popularity'),
                 'poster_path': show.get('poster_path'),
-                'imdb_id': imdb_id
             })
 
         return series

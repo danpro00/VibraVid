@@ -70,7 +70,6 @@ class MostraguardaAPI(BaseStreamingAPI):
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
             scrape_serie = GetSerieInfo(
-                media_item.id,
                 media_item.name,
                 getattr(media_item, 'imdb_id', None),
                 getattr(media_item, 'year', None)

@@ -480,11 +480,12 @@
 			<!-- Messages Toast -->
 			{% if messages %}
 			<div
+				id="toast-container"
 				class="fixed top-24 right-4 z-50 space-y-3 max-w-md animate-slide-in"
 			>
 				{% for message in messages %}
 				<div
-					class="{% if message.tags == 'success' %}bg-green-600{% else %}bg-red-600{% endif %} text-white px-5 py-4 rounded-lg shadow-2xl backdrop-blur-xl flex items-start gap-3"
+					class="toast-item {% if message.tags == 'success' %}bg-green-600{% else %}bg-red-600{% endif %} text-white px-5 py-4 rounded-lg shadow-2xl backdrop-blur-xl flex items-start gap-3 transition-all duration-500"
 				>
 					<svg
 						class="w-5 h-5 flex-shrink-0 mt-0.5"
@@ -508,10 +509,28 @@
 						></path>
 						{% endif %}
 					</svg>
-					<span class="text-sm font-medium">{{ message }}</span>
+					<span class="text-sm font-medium flex-1">{{ message }}</span>
+					<button onclick="this.closest('.toast-item').remove()" class="ml-2 opacity-70 hover:opacity-100 transition-opacity flex-shrink-0">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+						</svg>
+					</button>
 				</div>
 				{% endfor %}
 			</div>
+			<script>
+				// Auto-dismiss toasts after 5 seconds
+				document.addEventListener('DOMContentLoaded', function() {
+					const toasts = document.querySelectorAll('.toast-item');
+					toasts.forEach(function(toast, i) {
+						setTimeout(function() {
+							toast.style.opacity = '0';
+							toast.style.transform = 'translateX(100%)';
+							setTimeout(function() { toast.remove(); }, 500);
+						}, 4000 + i * 300);
+					});
+				});
+			</script>
 			{% endif %}
 
 			<div class="w-full px-3 sm:px-5 lg:px-8">

@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from VibraVid.utils import TVShowManager
-from VibraVid.utils.tmdb_client import tmdb_client
+from VibraVid.provider.tmdb import tmdb_client
 from VibraVid.services._base import site_constants, EntriesManager, Entries
 from VibraVid.services._base.site_search_manager import base_process_search_result, base_search
 

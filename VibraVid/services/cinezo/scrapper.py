@@ -4,7 +4,7 @@
 import logging
 
 from VibraVid.services._base.object import SeasonManager, Season, Episode, EpisodeManager
-from VibraVid.utils.tmdb_client import tmdb_client
+from VibraVid.provider.tmdb import tmdb_client
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,8 @@ class GetSerieInfo:
     def getEpisodeSeasons(self, season_number: int) -> list:
         self._load()
         season = self.seasons_manager.get_season_by_number(season_number)
+
         if not season:
             return []
+        
         return season.episodes.episodes

@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from VibraVid.utils import TVShowManager
-from VibraVid.utils.tmdb_client import tmdb
+from VibraVid.provider.tmdb import tmdb
 from VibraVid.services._base import site_constants, EntriesManager, Entries
 from VibraVid.services._base.site_search_manager import base_process_search_result, base_search
 
@@ -53,7 +53,6 @@ def title_search(query: str) -> int:
             type='film',
             url='',  # Not needed for download
             image=f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else None,
-            imdb_id=movie.get('imdb_id'),
             year=year
         )
 
@@ -76,7 +75,6 @@ def title_search(query: str) -> int:
             type='tv',
             url='',
             image=f"https://image.tmdb.org/t/p/w500{show.get('poster_path')}" if show.get('poster_path') else None,
-            imdb_id=show.get('imdb_id'),
             year=year
         )
 

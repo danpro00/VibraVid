@@ -1,13 +1,13 @@
 # 23.11.24
 
 import difflib
+import logging
 from datetime import datetime
 from typing import Any, List, Optional
 
-from VibraVid.utils import config_manager, tmdb_client
+from VibraVid.provider.tmdb import tmdb_client
 
-
-TMDB_KEY = config_manager.login.get('TMDB', 'api_key')
+logger = logging.getLogger(__name__)
 
 
 class Episode:
@@ -154,22 +154,22 @@ class EntriesManager:
         self.media_list: List[Entries] = []
 
     def add(self, media: Entries) -> None:
+
         # Logic to fetch year if 9999
         if media.year == "9999":
-            if (TMDB_KEY != '' and TMDB_KEY is not None):
-                if (media.slug and media.slug != ''):
-                    print(f"Fetching year for slug: {media.slug}, type: {media.type}")
-                    media.year = str(tmdb_client.get_year_by_slug_and_type(media.slug, media.type) or "9999")
-                    if media.year == "9999":
-                        print("Cant fetch year setting current year.")
-                        media.year = str(datetime.now().year)
+            if (media.slug and media.slug != ''):
+                logger.info(f"Fetching year for slug: {media.slug}, type: {media.type}")
+                media.year = str(tmdb_client.get_year_by_slug_and_type(media.slug, media.type) or "9999")
+                if media.year == "9999":
+                    logger.warning("Cant fetch year setting current year.")
+                    media.year = str(datetime.now().year)
 
-                elif (media.name and media.name != ''):
-                    print(f"Fetching year for name: {media.name}, type: {media.type}")
-                    media.year = str(tmdb_client.get_year_by_slug_and_type(media.name.replace(' ', '-').lower(), media.type) or "9999")
-                    if media.year == "9999":
-                        print("Cant fetch year setting current year.")
-                        media.year = str(datetime.now().year)
+            elif (media.name and media.name != ''):
+                logger.info(f"Fetching year for name: {media.name}, type: {media.type}")
+                media.year = str(tmdb_client.get_year_by_slug_and_type(media.name.replace(' ', '-').lower(), media.type) or "9999")
+                if media.year == "9999":
+                    logger.warning("Cant fetch year setting current year.")
+                    media.year = str(datetime.now().year)
 
         self.media_list.append(media)
 
@@ -194,4 +194,5 @@ class EntriesManager:
             title = getattr(media, 'name', '')
             score = 0 if title is None else difflib.SequenceMatcher(None, query_lower, title.lower()).ratio()
             setattr(media, 'score', score)
+        
         self.media_list.sort(key=lambda x: getattr(x, 'score', 0), reverse=True)

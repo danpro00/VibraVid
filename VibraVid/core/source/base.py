@@ -14,7 +14,7 @@ from VibraVid.core.manifest.mpd import DashParser
 from VibraVid.core.manifest.ism import ISMParser
 from VibraVid.core.manifest.stream import Stream
 from VibraVid.utils.http_client import create_client, get_headers
-from VibraVid.utils.tmdb_client import tmdb_client
+from VibraVid.provider.tmdb import tmdb_client
 
 from VibraVid.core.ui.tracker import download_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
