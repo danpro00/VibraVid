@@ -9,6 +9,7 @@ from VibraVid.utils import config_manager, start_message
 from VibraVid.services._base import site_constants, Entries
 from VibraVid.services._base.tv_display_manager import map_movie_path, map_episode_path
 from VibraVid.services._base.tv_download_manager import process_season_selection, process_episode_download
+from VibraVid.provider.tmdb import tmdb_client
 
 from VibraVid.core.downloader import HLS_Downloader
 
@@ -29,11 +30,18 @@ def download_film(select_title: Entries) -> str:
     start_message()
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
 
+    tmdb_data = None
+    if tmdb_client.api_key is not None:
+        result = tmdb_client.get_type_and_id_by_slug_year(select_title.slug, select_title.year, "movie", select_title.provider_language)
+        if result and result.get('id') and result.get('type') == 'movie':
+            tmdb_data = {'id': result.get('id')}
+
     # Init class
-    video_source = VideoSource(f"{site_constants.FULL_URL}/{select_title.provider_language}", False, select_title.id)
+    video_source = VideoSource(f"{site_constants.FULL_URL}/{select_title.provider_language}", False, select_title.id, tmdb_data=tmdb_data)
 
     # Retrieve iframe only if not using TMDB API
-    video_source.get_iframe(select_title.id)
+    if tmdb_data is None:
+        video_source.get_iframe(select_title.id)
     
     video_source.get_content()
     master_playlist = video_source.get_playlist()
@@ -62,7 +70,22 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     path_components, filename = map_episode_path(series_display, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
     episode_path = os.path.join(site_constants.SERIES_FOLDER, *path_components)
     episode_name = f"{filename}.{extension_output}"
-    video_source.get_iframe(obj_episode.id)
+
+    if tmdb_client.api_key is not None:
+        series_slug = scrape_serie.series_name.lower().replace(' ', '-').replace("'", '')
+        result = tmdb_client.get_type_and_id_by_slug_year(str(series_slug), int(scrape_serie.year), 'tv', scrape_serie.provider_language)
+        
+        if result and result.get('id') and result.get('type') == 'tv':
+            tmdb_id = result.get('id')
+            video_source.tmdb_id = tmdb_id
+            video_source.season_number = index_season_selected
+            video_source.episode_number = index_episode_selected
+
+        else:
+            video_source.get_iframe(obj_episode.id)
+
+    else:
+        video_source.get_iframe(obj_episode.id)
 
     video_source.get_content()
     master_playlist = video_source.get_playlist()

@@ -21,6 +21,7 @@ _⚡ **Quick Start:** `pip install VibraVid && VibraVid`_
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Update](#update)
 - [Login](.github/docs/en/login.md)
 - [Downloaders](#downloaders)
 - [Configuration](#configuration)
@@ -98,6 +99,43 @@ python manual.py
 ```
 
 ---
+
+## Update
+
+### Binary (Windows / macOS / Linux)
+
+```bash
+VibraVid -UP
+```
+
+### PyPI
+
+```bash
+pip install VibraVid --upgrade
+```
+
+### uv
+
+```bash
+uv tool upgrade VibraVid
+```
+
+### Manual clone
+
+```bash
+git fetch origin
+git reset --hard origin/main
+```
+
+> If the folder is not yet an initialized Git repository:
+> ```bash
+> git init
+> git remote add origin https://github.com/AstraeLabs/VibraVid.git
+> git fetch origin
+> git reset --hard origin/main
+> ```
+
+> ⚠️ Folders ignored by `.gitignore` (e.g. `Video/`) **will not be deleted**.
 
 ## Downloaders
 
