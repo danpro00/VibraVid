@@ -100,9 +100,16 @@
         
         <!-- Top Badges -->
         <div class="absolute top-2 left-2 right-2 flex items-start justify-between gap-2 z-10">
-          <span class="px-2 py-1 bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider rounded shadow-lg">
-            {{ result.display_type }}
-          </span>
+          <div class="flex flex-wrap items-start gap-1">
+            <span class="px-2 py-1 bg-red-600 text-white text-[10px] font-bold uppercase tracking-wider rounded shadow-lg">
+              {{ result.display_type }}
+            </span>
+            {% if is_global %}
+            <span class="px-2 py-1 bg-black/80 backdrop-blur-sm text-red-300 text-[10px] font-bold uppercase tracking-wider rounded shadow-lg">
+              {{ result.source }}
+            </span>
+            {% endif %}
+          </div>
           {% if result.year %}
           <span class="px-2 py-1 bg-black/80 backdrop-blur-sm text-white text-[10px] font-semibold rounded">
             {{ result.year }}
@@ -180,7 +187,7 @@
               <input type="hidden" name="source_alias" value="{{ result.source_alias }}">
               <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
               <input type="hidden" name="search_query" value="{{ query }}">
-              <input type="hidden" name="search_site" value="{{ selected_site }}">
+              <input type="hidden" name="search_site" value="{{ result.source_alias }}">
               <button
                 type="submit"
                 class="py-2.5 px-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all flex items-center justify-center shadow-xl"
@@ -212,7 +219,7 @@
               <input type="hidden" name="source_alias" value="{{ result.source_alias }}">
               <input type="hidden" name="item_payload" value="{{ result.payload_json }}">
               <input type="hidden" name="search_query" value="{{ query }}">
-              <input type="hidden" name="search_site" value="{{ selected_site }}">
+              <input type="hidden" name="search_site" value="{{ result.source_alias }}">
               <button 
                 type="submit" 
                 class="py-2.5 px-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-md transition-all flex items-center justify-center shadow-xl"

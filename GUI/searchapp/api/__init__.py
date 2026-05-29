@@ -31,6 +31,7 @@ _PREFERRED_ORDER = [
     'eurostreaming',
     'spotify',
 ]
+_SITE_CATEGORIES: Dict[str, str] = {}
 
 
 def _initialize_registry():
@@ -121,6 +122,36 @@ def get_available_sites() -> List[str]:
         List of site identifiers
     """
     return list(_API_REGISTRY.keys())
+
+
+def get_site_categories() -> Dict[str, str]:
+    """
+    Map each available GUI site to its content category (the service's ``_useFor``, e.g. 'Film_Serie', 'Anime', 'Serie', 'song').
+    """
+    global _SITE_CATEGORIES
+    if _SITE_CATEGORIES:
+        return dict(_SITE_CATEGORIES)
+
+    try:
+        from VibraVid.services._base.site_loader import load_search_functions
+        fns = load_search_functions()
+    except Exception:
+        return {}
+
+    result: Dict[str, str] = {}
+    for alias, lazy in fns.items():
+        site = alias[: -len("_search")] if alias.endswith("_search") else alias
+        if site not in _API_REGISTRY:
+            continue
+        try:
+            category = lazy.use_for
+        except Exception:
+            continue
+        if category:
+            result[site] = category
+
+    _SITE_CATEGORIES = result
+    return dict(result)
 
 
 def get_api(site: str) -> BaseStreamingAPI:

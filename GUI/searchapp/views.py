@@ -26,7 +26,7 @@ from django.utils import timezone
 from .forms import SearchForm, DownloadForm
 from .models import WatchlistItem
 from .watchlist_auto import _get_interval_seconds
-from GUI.searchapp.api import get_api
+from GUI.searchapp.api import get_api, get_available_sites, get_site_categories
 from GUI.searchapp.api.base import Entries
 
 from VibraVid.core.ui.tracker import  download_tracker, context_tracker
@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 _recent_webhooks = {}  # (source, tmdbId) -> timestamp (float)
 _recent_webhooks_lock = threading.Lock()
 _WEBHOOK_DEDUP_WINDOW = 300  # 5 minutes
+_GLOBAL_SEARCH_TIMEOUT = 45
 
 
 def _is_recent_webhook(tmdb_id, source=None, window_seconds=None, touch=True):
@@ -301,6 +302,59 @@ def search_home(request: HttpRequest) -> HttpResponse:
     return render(request, "searchapp/home.html", {"form": form})
 
 
+def _resolve_global_sites(site_token: str) -> Optional[List[str]]:
+    """Map a special dropdown token to a list of sites.
+
+    Returns the target site list for a global/category search, or None when the value
+    is a normal single-site identifier (the caller then does the classic search).
+    """
+    if site_token == "__all__":
+        return get_available_sites()
+    if site_token.startswith("__cat__:"):
+        category = site_token.split(":", 1)[1]
+        return [s for s, c in get_site_categories().items() if c == category]
+    return None
+
+
+def _run_global_search(query: str, sites: List[str]):
+    """Search `query` across many sites in parallel.
+
+    Returns (results, failed_sites). Each site runs in its own thread; a failure or
+    timeout on one site is isolated and never blocks the others. Service searches are
+    invoked via the adapters with get_onlyDatabase=True, so they never prompt.
+    """
+    results: List[Dict[str, Any]] = []
+    failed: List[str] = []
+    if not sites:
+        return results, failed
+
+    def _one(site: str):
+        api = get_api(site)
+        return [_media_item_to_display_dict(item, site) for item in api.search(query)]
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(len(sites), 8))
+    future_map = {executor.submit(_one, s): s for s in sites}
+    try:
+        for fut in concurrent.futures.as_completed(future_map, timeout=_GLOBAL_SEARCH_TIMEOUT):
+            site = future_map[fut]
+            try:
+                results.extend(fut.result())
+            except Exception as e:
+                logger.warning(f"[global_search] '{site}' failed: {e}")
+                failed.append(site)
+    
+    except concurrent.futures.TimeoutError:
+        for fut, site in future_map.items():
+            if not fut.done():
+                logger.warning(f"[global_search] '{site}' timed out after {_GLOBAL_SEARCH_TIMEOUT}s")
+                failed.append(site)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    results.sort(key=lambda r: (str(r.get("display_title") or "").lower(), r.get("source_alias") or ""))
+    return results, failed
+
+
 @require_http_methods(["GET", "POST"])
 def search(request: HttpRequest) -> HttpResponse:
     """Handle search requests."""
@@ -320,6 +374,25 @@ def search(request: HttpRequest) -> HttpResponse:
 
     site = form.cleaned_data["site"]
     query = form.cleaned_data["query"]
+
+    # Global / per-category search across multiple services.
+    global_sites = _resolve_global_sites(site)
+    if global_sites is not None:
+        results, failed = _run_global_search(query, global_sites)
+        if failed:
+            messages.warning(request, f"Alcune fonti non hanno risposto: {', '.join(failed)}")
+        return render(
+            request,
+            "searchapp/results.html",
+            {
+                "form": SearchForm(initial={"site": site, "query": query}),
+                "query": query,
+                "download_form": DownloadForm(),
+                "results": results,
+                "selected_site": site,
+                "is_global": True,
+            },
+        )
 
     try:
         api = get_api(site)

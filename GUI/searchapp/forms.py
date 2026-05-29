@@ -2,12 +2,35 @@
 
 from django import forms
 
-from GUI.searchapp.api import get_available_sites
+from GUI.searchapp.api import get_available_sites, get_site_categories
+
+
+GLOBAL_ALL_TOKEN = "__all__"
+GLOBAL_CATEGORY_PREFIX = "__cat__:"
+_CATEGORY_LABELS = {
+    "Film_Serie": "Film e Serie",
+    "Serie": "Serie TV",
+    "Anime": "Anime",
+    "song": "Musica",
+}
 
 
 def get_site_choices():
+    """Build grouped <select> choices: a 'Ricerca Globale' optgroup (all sites + per category)"""
     sites = get_available_sites()
-    return [(site, site.replace('_', ' ').title()) for site in sites]
+
+    categories = sorted(set(get_site_categories().values()))
+    global_opts = [(GLOBAL_ALL_TOKEN, "🌐 Tutti i siti")]
+    for cat in categories:
+        label = _CATEGORY_LABELS.get(cat, cat.replace("_", " ").title())
+        global_opts.append((f"{GLOBAL_CATEGORY_PREFIX}{cat}", f"🌐 {label}"))
+
+    single_opts = [(site, site.replace('_', ' ').title()) for site in sites]
+
+    return [
+        ("Siti singoli", single_opts),
+        ("Ricerca Globale", global_opts),
+    ]
 
 
 class SearchForm(forms.Form):
