@@ -58,42 +58,52 @@ def setup_argument_parser(search_functions):
     parser = argparse.ArgumentParser(
         description='Script to download movies, series and anime.',
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog=f"Available sites by name: {available_names}\nAvailable sites by index: {available_indices}"
+        epilog=f"Sites by name:  {available_names}\nSites by index: {available_indices}"
     )
 
-    # ── Standard arguments
-    parser.add_argument('-s', '--search', default=None, help='Search terms')
-    parser.add_argument('--site', type=str, help='Site by name or index')
-    parser.add_argument('--category', type=int, help='Category filter for global search (1=Anime, 2=Movies/Series, 3=Series, 4=Movies)')
-    parser.add_argument('--global', dest='global_search', action='store_true', help='Global search across sites')
-    parser.add_argument('--close-console', dest='close_console', type=str, choices=['true', 'false'], help='Set whether to exit after last download (overrides config)')
-    parser.add_argument('--no-log', action='store_true', help='Disable log file creation for this run')
+    # ── Search & selection
+    search_group = parser.add_argument_group('Search & selection')
+    search_group.add_argument('-s', '--search', default=None, metavar='QUERY', help='Search terms')
+    search_group.add_argument('--site', type=str, metavar='NAME|INDEX', help='Target site (name or index)')
+    search_group.add_argument('--global', dest='global_search', action='store_true', help='Search across all sites')
+    search_group.add_argument('--category', type=int, metavar='N', help='Category filter for global search\n  1=Anime  2=Movies/Series  3=Series  4=Movies')
+    search_group.add_argument('--auto-first', action='store_true', help='Auto-select first result (requires --site and --search)')
+    search_group.add_argument('--year', type=str, metavar='RANGE', help='Year filter, e.g. "2020" or "1990-2015"')
 
-    parser.add_argument('--auto-first', action='store_true', help='Auto-download first result (use with --site and --search)')
-    parser.add_argument('--season', type=str, default=None, help='Season selection (for series, e.g., "1" or "1-3" or "*")')
-    parser.add_argument('--episode', type=str, default=None, help='Episode selection (for series, e.g., "1" or "1-5" or "*")')
-    parser.add_argument('--year', type=str, default=None, help='Year range filter (e.g., "1990-2015" or "2020")')
+    # ── Series navigation
+    series_group = parser.add_argument_group('Series navigation')
+    series_group.add_argument('--season', type=str, default=None, metavar='SEL', help='Season selection, e.g. "1", "1-3", "*"')
+    series_group.add_argument('--episode', type=str, default=None, metavar='SEL', help='Episode selection, e.g. "1", "1-5", "*"')
 
-    parser.add_argument('-sv', '--video', type=str, help='Select video tracks.')
-    parser.add_argument('-sa', '--audio', type=str, help='Select audio tracks.')
-    parser.add_argument('-ss', '--subtitle', type=str, help='Select subtitle tracks.')
+    # ── Track selection
+    track_group = parser.add_argument_group('Track selection')
+    track_group.add_argument('-sv', '--video', type=str, metavar='SPEC', help='Video track filter (e.g. "best", "1080p")')
+    track_group.add_argument('-sa', '--audio', type=str, metavar='SPEC', help='Audio track filter (e.g. "ita|it")')
+    track_group.add_argument('-ss', '--subtitle', type=str, metavar='SPEC', help='Subtitle track filter (e.g. "ita|eng")')
 
-    parser.add_argument('--use_proxy', action='store_true', help='Enable proxy for requests')
-    parser.add_argument('--extension', type=str, help='Output file extension (mkv, mp4)')
+    # ── Download options
+    dl_opts = parser.add_argument_group('Download options')
+    dl_opts.add_argument('--extension', type=str, metavar='EXT', help='Output container (mkv, mp4)')
+    dl_opts.add_argument('--use_proxy', action='store_true', help='Route requests through configured proxy')
+    dl_opts.add_argument('--skip-ts', dest='skip_ts', action='store_const', const=True, default=None, help='Skip TS/CAM releases (StreamingCommunity)')
+    dl_opts.add_argument('--close-console', dest='close_console', type=str, choices=['true', 'false'], metavar='true|false', help='Exit after last download (overrides config)')
 
-    parser.add_argument('-UP', '--update', action='store_true', help='Auto-update to latest version (binary only)')
-    parser.add_argument('--dep', action='store_true', help='Show all dependency paths (config, services, binaries)')
-    parser.add_argument('--version', action='version', version=f'{__title__} {__version__}')
+    # ── Direct download
+    dl_group = parser.add_argument_group('Direct download (--down)')
+    dl_group.add_argument('--down', metavar='URL', help='Stream URL to download directly (MP4 / HLS / DASH / ISM)')
+    dl_group.add_argument('-o', '--output', metavar='PATH', help='Output file path (extension auto-appended if omitted)')
+    dl_group.add_argument('--headers', action='append', metavar='Key:Value', help='HTTP header. Repeatable.')
+    dl_group.add_argument('--license-url', dest='license_url', metavar='URL', help='DRM license server URL (Widevine / PlayReady)')
+    dl_group.add_argument('--license-headers', dest='license_headers', action='append', metavar='Key:Value', help='HTTP header for DRM license request. Repeatable.')
+    dl_group.add_argument('--key', action='append', metavar='KID:KEY', help='Decryption key in KID:KEY hex format. Repeatable.')
+    dl_group.add_argument('--drm', choices=['widevine', 'playready', 'auto'], default='auto', help='DRM system (default: auto)')
 
-    # ── Direct download arguments
-    dl_group = parser.add_argument_group('Direct download')
-    dl_group.add_argument('--down', metavar='URL', help='Direct stream URL to download (MP4 / HLS / DASH / ISM).')
-    dl_group.add_argument('-o', '--output', metavar='PATH', help='Output file path (extension auto-appended if omitted).')
-    dl_group.add_argument('--headers', action='append', metavar='Key:Value', help='HTTP request header. Repeatable: --headers "Name:Val" --headers "Name2:Val2".')
-    dl_group.add_argument('--license-url', dest='license_url', metavar='URL', help='DRM license server URL (Widevine / PlayReady).')
-    dl_group.add_argument('--license-headers', dest='license_headers', action='append', metavar='Key:Value', help='HTTP header for the DRM license request. Repeatable.',)
-    dl_group.add_argument('--key', action='append', metavar='KID:KEY', help='Manual decryption key in KID:KEY hex format. Repeatable for multiple keys.',)
-    dl_group.add_argument('--drm', choices=['widevine', 'playready', 'auto'], default='auto', help='DRM system preference (default: auto — widevine for HLS/DASH, playready for ISM).',)
+    # ── Utility
+    util_group = parser.add_argument_group('Utility')
+    util_group.add_argument('--no-log', action='store_true', help='Disable log file for this run')
+    util_group.add_argument('-UP', '--update', action='store_true', help='Auto-update to latest version (binary only)')
+    util_group.add_argument('--dep', action='store_true', help='Show dependency paths (config, services, binaries)')
+    util_group.add_argument('--version', action='version', version=f'{__title__} {__version__}')
 
     logger.debug("Argument parser set up with available sites and options.")
     return parser
@@ -108,6 +118,7 @@ def apply_config_updates(args):
         'use_proxy':     'REQUESTS.use_proxy',
         'extension':     'PROCESS.extension',
         'close_console': 'DEFAULT.close_console',
+        'skip_ts':       'DEFAULT.skip_ts_versions',
     }
 
     persistent_updates = {}

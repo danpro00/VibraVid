@@ -8,7 +8,8 @@
         "auto_update_check": true,
         "disable_scraper_cache": false,
         "imp_service": ["default"],
-        "installation": "essential"
+        "installation": "essential",
+        "skip_ts_versions": false
     },
     "OUTPUT": {
         "root_path": "Video",

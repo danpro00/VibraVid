@@ -78,6 +78,35 @@ class GetSerieInfo:
             logger.error(f"Error collecting series info: {e}")
             raise
 
+    def get_quality(self) -> str:
+        """Return the quality label (e.g. 'TS', 'CAM', 'HD') for this title.
+
+        Reuses title_info if already populated by collect_info_title(); otherwise
+        fetches the title page on demand (needed for movies).
+        """
+        if not getattr(self, 'title_info', None):
+            try:
+                self.collect_info_title()
+            except Exception:
+                return ""
+        
+        title_node = getattr(self, 'title_info', None) or {}
+        quality = str(title_node.get("quality") or "").upper()
+        if quality:
+            return quality
+        
+        for tag in title_node.get("tags", []):
+            if isinstance(tag, dict):
+                tag_name = str(tag.get("name", "")).upper()
+                if tag_name in {"TS", "CAM", "CINEMA"}:
+                    return tag_name
+        
+        return ""
+
+    def is_cam(self) -> bool:
+        """Return True if this title is a TS/CAM/Cinema release."""
+        return self.get_quality() in {"TS", "CAM", "CINEMA"}
+
     def collect_info_season(self, number_season: int) -> None:
         """
         Retrieve episode information for a specific season.
@@ -198,5 +227,5 @@ class GetSerieInfo:
             
         if not season.episodes.episodes:
             self.collect_info_season(season_number)
-            
+        
         return season.episodes.episodes

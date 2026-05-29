@@ -28,6 +28,18 @@ def download_film(select_title: Entries) -> str:
     Downloads a film using the provided Entries information.
     """
     start_message()
+
+    if config_manager.config.get_bool('DEFAULT', 'skip_ts_versions'):
+        scraper = GetSerieInfo(
+            f"{site_constants.FULL_URL}/{select_title.provider_language}",
+            media_id=select_title.id,
+            series_name=select_title.slug
+        )
+        
+        if scraper.is_cam():
+            console.print(f"[yellow][SKIP] Download aborted: TS/CAM version detected for '{select_title.name}'")
+            return None
+
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
 
     tmdb_data = None
