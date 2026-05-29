@@ -130,17 +130,14 @@ class ArrDownloaderService:
                     
                     # VibraVid's actual output folder (from Sonarr's perspective)
                     vibrativo_folder = self._get_vibrativo_serie_output(series_root, result_name, season_num, result_year)
-                    
-                    # Update Sonarr's root path for the series to match VibraVid's output folder
-                    if vibrativo_folder:
-                        self.sonarr.update_series_path(serie["id"], self._translate_path(vibrativo_folder))
 
                     # Rescan series on the new path
                     try:
                         self.sonarr.command_rescan_series(serie["id"])
                         time.sleep(1)
-                        self.sonarr.command_downloaded_episodes_scan(self._translate_path(vibrativo_folder))
-                        logger.info(f"Rescan completed for S{season_num}E{ep_num}")
+                        if vibrativo_folder:
+                            self.sonarr.command_downloaded_episodes_scan(self._translate_path(vibrativo_folder))
+                        logger.info(f"Rescan/import scan completed for S{season_num}E{ep_num}")
                     except Exception as scan_exc:
                         logger.warning(f"Rescan failed: {scan_exc}")
 
@@ -302,16 +299,13 @@ class ArrDownloaderService:
             else:
                 vibrativo_folder = self._get_vibrativo_movie_output(movie_root, result_name, result_year)
 
-            # Update Radarr's path to wherever the file now is
-            if vibrativo_folder:
-                self.radarr.update_movie_path(movie_id, self._translate_path(vibrativo_folder))
-
             # Rescan movie on the new path
             try:
                 self.radarr.command_rescan_movie(movie_id)
                 time.sleep(1)
-                self.radarr.command_downloaded_movies_scan(self._translate_path(vibrativo_folder))
-                logger.info(f"Rescan completed for '{title}'")
+                if vibrativo_folder:
+                    self.radarr.command_downloaded_movies_scan(self._translate_path(vibrativo_folder))
+                logger.info(f"Rescan/import scan completed for '{title}'")
             except Exception as scan_exc:
                 logger.warning(f"Rescan failed: {scan_exc}")
 

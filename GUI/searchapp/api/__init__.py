@@ -28,6 +28,7 @@ _PREFERRED_ORDER = [
     'tubitv',
     'cinezo',
     'mostraguarda',
+    'eurostreaming',
     'spotify',
 ]
 
