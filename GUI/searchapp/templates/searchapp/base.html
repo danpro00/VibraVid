@@ -498,14 +498,14 @@
 						fetch('/api/version/update/', {method: 'POST', headers: {'X-CSRFToken': getCookie('csrftoken')}})
 							.then(function(r) { return r.json(); })
 							.then(function(d) {
-								if (d.success) {
-									btn.textContent = 'Restarting…';
+								if (d && d.success) {
+									btn.textContent = 'Restarting…'; if (d.message) text.textContent = d.message;
 									setTimeout(function() { location.reload(); }, 30000);
 								} else {
-									btn.textContent = 'Failed — update manually';
+									btn.disabled = false; btn.textContent = 'Retry'; text.textContent = (d && d.message) ? d.message : 'Update failed — update manually';
 								}
 							})
-							.catch(function() { btn.textContent = 'Failed — update manually'; });
+							.catch(function() { btn.disabled = false; btn.textContent = 'Retry'; text.textContent = 'Update failed — update manually'; });
 					});
 				})
 				.catch(function() {});

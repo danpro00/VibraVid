@@ -33,7 +33,7 @@ cleanup_apt_config() {
 trap cleanup_apt_config EXIT
 
 # Check if we need to clone the repository (in case run via curl)
-if [ ! -f "setup.py" ] && [ ! -f "pyproject.toml" ]; then
+if [ ! -f "README.md" ]; then
     echo -e "${YELLOW}VibraVid non rilevato nella cartella corrente. Preparazione installazione...${NC_REG}"
     
     # Ensure git is installed to perform the clone

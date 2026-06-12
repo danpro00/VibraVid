@@ -31,6 +31,20 @@ if [ -z "$(ls -A /app/Conf 2>/dev/null)" ]; then
     chown -R appuser:appuser /app/Conf
 fi
 
+# ── 2b. Docker socket access (in-app updater) ────────────────────────────────
+if [ -S /var/run/docker.sock ]; then
+    SOCK_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "")
+    if [ -n "$SOCK_GID" ] && [ "$SOCK_GID" != "0" ]; then
+        if ! getent group "$SOCK_GID" >/dev/null 2>&1; then
+            groupadd -g "$SOCK_GID" dockerhost 2>/dev/null || true
+        fi
+        SOCK_GROUP=$(getent group "$SOCK_GID" | cut -d: -f1)
+        [ -n "$SOCK_GROUP" ] && usermod -aG "$SOCK_GROUP" appuser 2>/dev/null || true
+    else
+        chmod 666 /var/run/docker.sock 2>/dev/null || true
+    fi
+fi
+
 # ── 3. Migrations ─────────────────────────────────────────────────────────────
 gosu appuser python GUI/manage.py migrate --noinput
 

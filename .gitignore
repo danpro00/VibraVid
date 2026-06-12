@@ -47,7 +47,6 @@ downloaded_files/
 .ruff_cache
 
 # Other
-Video
 start.sh
 .DS_Store
 GUI/db.sqlite3

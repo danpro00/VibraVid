@@ -2108,18 +2108,20 @@ def check_updates(request: HttpRequest) -> JsonResponse:
 
 @require_http_methods(["POST"])
 def trigger_update(request: HttpRequest) -> JsonResponse:
-    """Write a sentinel file that a host-side update script can watch.
+    """Perform an in-app update appropriate to how VibraVid is running.
 
-    The container itself cannot run docker compose — it writes a marker file
-    to /app/data/.update_requested so an external script (docker/scripts/nas-update.sh)
-    can detect it and perform the actual image pull + container recreation.
+    Delegates to self_update.perform_update(), which detects the execution
+    mode (docker / binary installer / source checkout) and acts accordingly.
+    Returns {"success": bool, "message": str, ...} so the UI can surface a
+    meaningful status. Always responds 200 so the frontend reads the message
+    even on a soft failure that needs manual action.
     """
-    sentinel = os.path.join(os.environ.get("DJANGO_DB_DIR", "/app/data"), ".update_requested")
+    from .self_update import perform_update
+
     try:
-        with open(sentinel, "w") as f:
-            f.write(str(time.time()))
-        logger.info(f"Update sentinel written: {sentinel}")
-        return JsonResponse({"success": True, "sentinel": sentinel})
+        result = perform_update()
     except Exception as exc:
-        logger.error(f"Failed to write update sentinel: {exc}")
-        return JsonResponse({"success": False, "error": str(exc)}, status=500)
+        logger.exception("Self-update failed")
+        return JsonResponse({"success": False, "message": str(exc)}, status=500)
+
+    return JsonResponse(result)

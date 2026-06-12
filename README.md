@@ -1096,18 +1096,20 @@ docker run -d --name vibravid -p 8000:8000 `
 
 ### Updating (Docker)
 
-When a new version is released, VibraVid shows an **update banner** in the web UI. Click **Update now** to trigger the update.
+When a new version is released, VibraVid shows an **update banner** in the web UI. Click **Update now** to update in place.
 
-The container cannot restart itself — it writes a marker file to `/app/data/.update_requested`. A host-side script (`docker/scripts/nas-update.sh`) picks it up and runs:
+**One-click update** requires the Docker socket to be mounted (it is in the default `docker-compose.yml`):
 
-```bash
-docker compose pull
-docker compose up -d
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock
 ```
 
-To use the one-click update, install and start `docker/scripts/nas-update.sh` on the host. See [scripts/README.md](scripts/README.md) for setup instructions (systemd, Synology Scheduled Task, cron).
+With the socket mounted, **Update now** drives the host Docker daemon directly: it launches a short-lived helper container that runs `docker compose pull && docker compose up -d`, pulling the published image (`ghcr.io/astraelabs/vibravid:latest`) and recreating the container. No host-side script is required.
 
-**Manual update** (works without the script):
+> **Security note:** mounting the Docker socket grants the container control of the host Docker daemon. If you'd rather not, comment out the socket volume — the button will then tell you to update manually.
+
+**Manual update** (always works, socket or not):
 
 ```bash
 docker compose pull

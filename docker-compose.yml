@@ -1,7 +1,6 @@
-version: '3.8'
-
 services:
   vibravid:
+    image: ghcr.io/astraelabs/vibravid:${VIBRAVID_TAG:-latest}
     build:
       context: .
       dockerfile: dockerfile
@@ -29,6 +28,9 @@ services:
       - ${VIBRAVID_LOGS_DIR:-vibravid_logs}:/app/logs
       # Configuration persistence
       - ${VIBRAVID_CONFIG_DIR:-vibravid_config}:/app/Conf
+      # Docker socket — enables the in-app "Update now" button to pull the new
+      # image and recreate the container by driving the host Docker daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
       # NOTE: /app/VibraVid/services is INTENTIONALLY NOT a named volume.
       # If it were, the volume would freeze the services directory to the
       # snapshot captured the first time the container started, and any
