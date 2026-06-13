@@ -48,9 +48,8 @@ class GetSerieInfo:
             Exception: If there's an error fetching series information
         """
         try:
-            client = create_client(headers=self.headers)
-            response = client.get(f"{self.url}/titles/{self.media_id}-{self.series_name}")
-            client.close()
+            with create_client(headers=self.headers) as client:
+                response = client.get(f"{self.url}/titles/{self.media_id}-{self.series_name}")
             response.raise_for_status()
 
             # Extract series info from JSON response
@@ -131,12 +130,11 @@ class GetSerieInfo:
             for lang in ['it', 'en']:
                 try:
                     logger.info(f"Fetching episodes for season {number_season} in language '{lang}'")
-                    client = create_client(headers=self.headers)
-                    resp_ver = client.get(f"{self.base_url}/{lang}")
+                    with create_client(headers=self.headers) as client:
+                        resp_ver = client.get(f"{self.base_url}/{lang}")
                     resp_ver.raise_for_status()
                     ver = BeautifulSoup(resp_ver.text, "html.parser")
                     ver = json.loads(ver.find("div", {"id": "app"}).get("data-page"))['version']
-                    client.close()
                 except Exception:
                     # Skip this language if we can't get version
                     continue

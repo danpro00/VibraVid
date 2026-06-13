@@ -28,9 +28,8 @@ timeout = config_manager.config.get_int("REQUESTS", "timeout")
 
 def fetch_github_releases():
     """Fetch releases data from GitHub API (sync)"""
-    client = create_client(headers=get_headers())
-    response = client.get(f"https://api.github.com/repos/{__author__}/{__title__}/releases")
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.get(f"https://api.github.com/repos/{__author__}/{__title__}/releases")
     return response.json()
 
 
@@ -87,10 +86,9 @@ def auto_update():
         console.print(f"[#00BCD4]Downloading {asset['name']}...")
         
         # Download
-        client = create_client(headers=get_headers(), timeout=300, follow_redirects=True)
-        response = client.get(asset['browser_download_url'])
-        client.close()
-        
+        with create_client(headers=get_headers(), timeout=300, follow_redirects=True) as client:
+            response = client.get(asset['browser_download_url'])
+
         if response.status_code != 200:
             console.print("[#E63946]Download failed")
             return False

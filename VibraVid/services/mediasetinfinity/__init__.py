@@ -49,9 +49,8 @@ def title_search(query: str) -> int:
     }
     
     try:
-        client = create_client(headers=class_mediaset_api.generate_request_headers())
-        response = client.get(search_url, params=params)
-        client.close()
+        with create_client(headers=class_mediaset_api.generate_request_headers()) as client:
+            response = client.get(search_url, params=params)
         response.raise_for_status()
     except Exception as e:
         console.print(f"[red]Site: {site_constants.SITE_NAME}, request search error: {e}")

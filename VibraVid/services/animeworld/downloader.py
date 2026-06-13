@@ -42,7 +42,10 @@ def download_film(select_title: Entries):
 
     # Get video source for the episode
     video_source = VideoSource(site_constants.FULL_URL, episode_data, scrape_serie.session_id, scrape_serie.csrf_token)
-    mp4_link = video_source.get_playlist()
+    try:
+        mp4_link = video_source.get_playlist()
+    finally:
+        video_source.close()
 
     # Start downloading
     return MP4_Downloader(
@@ -72,7 +75,10 @@ def download_episode(episode_data, index_select, scrape_serie):
 
     # Get video source for the episode
     video_source = VideoSource(site_constants.FULL_URL, episode_data, scrape_serie.session_id, scrape_serie.csrf_token)
-    mp4_link = video_source.get_playlist()
+    try:
+        mp4_link = video_source.get_playlist()
+    finally:
+        video_source.close()
 
     # Start downloading
     return MP4_Downloader(

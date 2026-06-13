@@ -31,43 +31,39 @@ class GetSerieInfo:
         
         self._loaded = True
         headers = {'User-Agent': get_userAgent()}
-        client = create_client(headers=headers)
-
-        try:
-            resp = client.get(f"{self.base_url}/wp-json/wp/v2/search", params={'search': self.series_name, '_fields': 'id'})
-            resp.raise_for_status()
-            results = resp.json()
-        except Exception as e:
-            logger.error(f"[Eurostreaming] WP search failed for '{self.series_name}': {e}")
-            client.close()
-            return
-
         best_ratio = 0.0
         best_content = ''
         best_title = ''
 
-        for item in results[:20]:
-            post_id = item.get('id')
-            if not post_id:
-                continue
-
+        with create_client(headers=headers) as client:
             try:
-                post_resp = client.get(f"{self.base_url}/wp-json/wp/v2/posts/{post_id}", params={'_fields': 'content,title'},)
-                post_resp.raise_for_status()
-                data = post_resp.json()
-                title = data.get('title', {}).get('rendered', '')
-                content = data.get('content', {}).get('rendered', '')
-
-                ratio = difflib.SequenceMatcher(None, title.lower(), self.series_name.lower()).ratio()
-                if ratio > best_ratio:
-                    best_ratio = ratio
-                    best_content = content
-                    best_title = title
-
+                resp = client.get(f"{self.base_url}/wp-json/wp/v2/search", params={'search': self.series_name, '_fields': 'id'})
+                resp.raise_for_status()
+                results = resp.json()
             except Exception as e:
-                logger.error(f"[Eurostreaming] Post fetch failed id={post_id}: {e}")
+                logger.error(f"[Eurostreaming] WP search failed for '{self.series_name}': {e}")
+                return
 
-        client.close()
+            for item in results[:20]:
+                post_id = item.get('id')
+                if not post_id:
+                    continue
+
+                try:
+                    post_resp = client.get(f"{self.base_url}/wp-json/wp/v2/posts/{post_id}", params={'_fields': 'content,title'},)
+                    post_resp.raise_for_status()
+                    data = post_resp.json()
+                    title = data.get('title', {}).get('rendered', '')
+                    content = data.get('content', {}).get('rendered', '')
+
+                    ratio = difflib.SequenceMatcher(None, title.lower(), self.series_name.lower()).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_content = content
+                        best_title = title
+
+                except Exception as e:
+                    logger.error(f"[Eurostreaming] Post fetch failed id={post_id}: {e}")
 
         if not best_content:
             logger.warning(f"[Eurostreaming] No post found for '{self.series_name}'")

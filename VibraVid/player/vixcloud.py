@@ -60,9 +60,8 @@ class VideoSource:
             }
 
         try:
-            client = create_client(headers=self.headers)
-            response = client.get(f"{self.url}/iframe/{self.media_id}", params=params)
-            client.close()
+            with create_client(headers=self.headers) as client:
+                response = client.get(f"{self.url}/iframe/{self.media_id}", params=params)
             response.raise_for_status()
 
             # Parse response with BeautifulSoup to get iframe source
@@ -136,9 +135,8 @@ class VideoSource:
 
             # Fetch content from iframe source
             if self.iframe_src is not None:
-                client = create_client(headers=self.headers)
-                response = client.get(self.iframe_src)
-                client.close()
+                with create_client(headers=self.headers) as client:
+                    response = client.get(self.iframe_src)
                 response.raise_for_status()
                 self.parse_script(script_text=response.text)
 
@@ -207,9 +205,8 @@ class VideoSourceAnime(VideoSource):
             str: Parsed script content
         """
         try:
-            client = create_client(headers=self.headers)
-            response = client.get(f"{self.url}/embed-url/{episode_id}")
-            client.close()
+            with create_client(headers=self.headers) as client:
+                response = client.get(f"{self.url}/embed-url/{episode_id}")
             response.raise_for_status()
 
             # Extract and clean embed URL
@@ -217,9 +214,8 @@ class VideoSourceAnime(VideoSource):
             self.iframe_src = embed_url
 
             # Fetch video content using embed URL
-            client = create_client(headers=self.headers)
-            video_response = client.get(embed_url)
-            client.close()
+            with create_client(headers=self.headers) as client:
+                video_response = client.get(embed_url)
             video_response.raise_for_status()
 
             # Parse response with BeautifulSoup to get content of the scriot

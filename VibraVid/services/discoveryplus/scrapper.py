@@ -23,9 +23,8 @@ class GetStandaloneInfo:
         try:
             url = f"{self.client.base_url}/cms/routes/movie/{self.standalone_id}"
             params = {'include': 'default', 'decorators': 'isFavorite,playbackAllowed,contentAction,badges'}
-            client = create_client(headers=self.client.headers, cookies=self.client.cookies)
-            response = client.get(url, params=params)
-            client.close()
+            with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                response = client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
 
@@ -88,16 +87,14 @@ class GetLiveInfo:
         try:
             url = f"{self.client.base_url}/cms/routes/sport/{self.video_id}"
             params = {'include': 'default', 'decorators': 'isFavorite,playbackAllowed,contentAction,badges'}
-            client = create_client(headers=self.client.headers, cookies=self.client.cookies)
-            response = client.get(url, params=params)
-            client.close()
+            with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                response = client.get(url, params=params)
 
             if response.status_code != 200:
                 # Fallback: query the video directly via content endpoint
                 url = f"{self.client.base_url}/content/videos/{self.video_id}"
-                client = create_client(headers=self.client.headers, cookies=self.client.cookies)
-                response = client.get(url)
-                client.close()
+                with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                    response = client.get(url)
                 response.raise_for_status()
                 data = response.json()
                 if data.get('data', {}).get('type') == 'video':
@@ -178,9 +175,8 @@ class GetSerieInfo:
                 'include': 'default',
                 'decorators': 'viewingHistory,badges,isFavorite,contentAction'
             }
-            client = create_client(headers=self.client.headers, cookies=self.client.cookies)
-            response = client.get(url, params=params)
-            client.close()
+            with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                response = client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
 
@@ -215,9 +211,8 @@ class GetSerieInfo:
                     'include': 'default',
                     'decorators': 'viewingHistory,badges,isFavorite,contentAction',
                 }
-                client = create_client(headers=self.client.headers, cookies=self.client.cookies)
-                response = client.get(coll_url, params=coll_params)
-                client.close()
+                with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                    response = client.get(coll_url, params=coll_params)
                 response.raise_for_status()
                 season_data = response.json()
 

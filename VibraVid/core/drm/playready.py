@@ -139,9 +139,8 @@ def _get_playready_keys_local_cdm(pssh_list: list[dict], license_url: str, cdm_d
 
             logger.debug(f"License challenge for {kid_info}: {challenge_bytes}, type: {type(challenge_bytes)}")
             try:
-                client = create_client(headers=req_headers)
-                response = client.post(license_url, data=body)
-                client.close()
+                with create_client(headers=req_headers) as client:
+                    response = client.post(license_url, data=body)
             except Exception as e:
                 logger.error(f"License request error for {kid_info}: {e}")
                 console.print(f"[red]License request error for pssh {pssh[:30]}...: {e}")

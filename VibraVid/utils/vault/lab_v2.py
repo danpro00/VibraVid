@@ -1,6 +1,7 @@
 # 29.01.26
 
 import logging
+import threading
 from base64 import b64decode
 from typing import List, Optional
 
@@ -36,29 +37,47 @@ def _extract_kid_from_pssh(pssh_b64: str) -> Optional[str]:
     return None
 
 
-def _api_call(method: str, params: dict) -> dict:
-    """POST a JSON-RPC-style request to the lab vault, return the `message` dict."""
-    payload = {"method": method, "params": params, "token": TOKEN}
-    try:
-        logger.debug(f"Calling Lab API ({method}): {params}")
-        client = create_client(headers=get_headers())
-        r = client.post(VAULT_URL, json=payload)
-        client.close()
-        r.raise_for_status()
-        data = r.json()
-
-        if data.get("status_code") != 200:
-            raise RuntimeError(f"Lab API error: {data}")
-        return data.get("message", {})
-
-    except Exception as e:
-        logger.error(f"Lab API call failed ({method}): {e}")
-        console.print(f"[red]Lab API call failed ({method}): {e}")
-        return {}
-
-
 class LabDBVault:
-    """Vault backed by the external Lab API."""
+    def __init__(self):
+        self.session = create_client(headers=get_headers())
+        self._session_lock = threading.Lock()
+        self._prewarm()
+
+    def _prewarm(self) -> None:
+        """Open the TLS connection in a background thread so the first real lookup doesn't pay the handshake."""
+        def _warm():
+            try:
+                with self._session_lock:
+                    self.session.get(VAULT_URL, timeout=10)
+                logger.debug("Lab vault connection prewarmed")
+            except Exception as e:
+                logger.debug(f"Lab vault prewarm skipped (non-fatal): {e}")
+
+        threading.Thread(target=_warm, daemon=True, name="lab-vault-prewarm").start()
+
+    def close(self):
+        """Close the HTTP session."""
+        if self.session:
+            self.session.close()
+
+    def _api_call(self, method: str, params: dict) -> dict:
+        """POST a JSON-RPC-style request to the lab vault, return the `message` dict."""
+        payload = {"method": method, "params": params, "token": TOKEN}
+        try:
+            logger.debug(f"Calling Lab API ({method}): {params}")
+            with self._session_lock:
+                r = self.session.post(VAULT_URL, json=payload)
+            r.raise_for_status()
+            data = r.json()
+
+            if data.get("status_code") != 200:
+                raise RuntimeError(f"Lab API error: {data}")
+            return data.get("message", {})
+
+        except Exception as e:
+            logger.error(f"Lab API call failed ({method}): {e}")
+            console.print(f"[red]Lab API call failed ({method}): {e}")
+            return {}
 
     def _clean_license_url(self, license_url: str) -> str:
         return clean_license_url(license_url)
@@ -113,7 +132,7 @@ class LabDBVault:
             if license_url:
                 params["service"] = self._clean_license_url(license_url)
 
-            msg = _api_call("GetKey", params)
+            msg = self._api_call("GetKey", params)
             if not msg:
                 continue
 

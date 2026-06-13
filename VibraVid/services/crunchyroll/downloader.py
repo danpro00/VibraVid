@@ -177,6 +177,7 @@ def download_film(select_title: Entries) -> str:
     license_headers = _build_license_headers(mpd_headers, main_id, mpd_url, token)
     other_tracks = _subtitles_to_other_tracks(mpd_list_sub)
     other_tracks.extend(extra_audio_tracks)
+    client.close()
 
     return DASH_Downloader(
         mpd_url=mpd_url,

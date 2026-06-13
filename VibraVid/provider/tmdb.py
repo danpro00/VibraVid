@@ -44,9 +44,8 @@ class TMDBClient:
         
         for attempt in range(retries + 1):
             try:
-                client = create_client(headers=get_headers())
-                response = client.get(url, params=params)
-                client.close()
+                with create_client(headers=get_headers()) as client:
+                    response = client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
                 self._cache[cache_key] = data

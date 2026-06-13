@@ -25,9 +25,8 @@ def get_token(user_agent: str) -> dict:
     """
     Retrieve session cookies from the site.
     """
-    client = create_client(headers={'user-agent': user_agent})
-    response = client.get(site_constants.FULL_URL)
-    client.close()
+    with create_client(headers={'user-agent': user_agent}) as client:
+        response = client.get(site_constants.FULL_URL)
     response.raise_for_status()
     all_cookies = {name: value for name, value in response.cookies.items()}
 
@@ -68,9 +67,8 @@ def title_search(query: str) -> int:
 
     # First call: /livesearch
     try:
-        client = create_client(headers=headers)
-        response1 = client.post(f'{site_constants.FULL_URL}/livesearch', cookies=cookies, data={'title': query})
-        client.close()
+        with create_client(headers=headers) as client:
+            response1 = client.post(f'{site_constants.FULL_URL}/livesearch', cookies=cookies, data={'title': query})
         response1.raise_for_status()
         process_results(response1.json().get('records', []), seen_titles, entries_manager)
 
@@ -91,9 +89,8 @@ def title_search(query: str) -> int:
             'dubbed': False,
             'season': False,
         }
-        client = create_client(headers=headers)
-        response2 = client.post(f'{site_constants.FULL_URL}/archivio/get-animes', cookies=cookies, json=json_data)
-        client.close()
+        with create_client(headers=headers) as client:
+            response2 = client.post(f'{site_constants.FULL_URL}/archivio/get-animes', cookies=cookies, json=json_data)
         response2.raise_for_status()
         process_results(response2.json().get('records', []), seen_titles, entries_manager)
 

@@ -49,9 +49,8 @@ def fix_manifest_url(manifest_url: str) -> str:
 
 def _extract_film_content_id(first_item_url: str) -> str:
     """Extract the relinker content id (used for the Widevine license) from a film ContentItem JSON."""
-    client = create_client(headers=get_headers())
-    response = client.get(first_item_url)
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.get(first_item_url)
     response.raise_for_status()
 
     content_url = (response.json().get("video", {}) or {}).get("content_url", "") or ""
@@ -66,9 +65,8 @@ def download_film(select_title: Entries) -> Tuple[str, bool]:
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
 
     # Resolve the film's video ContentItem and extract the master playlist
-    client = create_client(headers=get_headers())
-    response = client.get(select_title.url + ".json")
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.get(select_title.url + ".json")
     first_item_path = "https://www.raiplay.it" + response.json().get("first_item_path")
     master_playlist = VideoSource.extract_m3u8_url(first_item_path)
 

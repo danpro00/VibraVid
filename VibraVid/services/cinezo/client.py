@@ -212,9 +212,8 @@ def _try_server(server, tmdb_id, media_type, season, episode, api_headers, found
             console.print(f"[yellow][Cinezo] {name}: no URL template")
             return None
 
-        client = create_client(headers=api_headers)
-        r = client.get(url, timeout=20)
-        client.close()
+        with create_client(headers=api_headers) as client:
+            r = client.get(url, timeout=20)
         if not r.ok or found_event.is_set():
             console.print(f"[yellow][Cinezo] {name}: HTTP {r.status_code}")
             return None

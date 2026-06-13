@@ -11,9 +11,8 @@ def get_session_and_csrf() -> dict:
     Get the session ID and CSRF token from the website's cookies and HTML meta data.
     """
     # Send an initial GET request to the website
-    client = create_client(headers=get_headers())
-    response = client.get(site_constants.FULL_URL)
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.get(site_constants.FULL_URL)
     session_id = response.cookies.get('sessionId')
     soup = BeautifulSoup(response.text, 'html.parser')
 

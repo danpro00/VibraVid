@@ -11,6 +11,9 @@ from rich.console import Console
 
 from VibraVid.core.muxing.helper.info import Mediainfo
 from VibraVid.core.muxing.helper.video import get_media_metadata, is_mpegts_file
+from VibraVid.core.muxing.helper.audio.probe import get_video_duration
+from VibraVid.core.muxing.capture import capture_ffmpeg_real_time
+from VibraVid.core.ui.tracker import context_tracker
 from VibraVid.setup import get_dovi_tool_path, get_ffmpeg_path, get_ffprobe_path, get_mkvmerge_path
 from VibraVid.core.decryptor._subprocess_runner import run_with_progress
 
@@ -127,19 +130,24 @@ def probe_media_file(file_path: str) -> Dict[str, Any]:
     return probe
 
 
+def _ffmpeg_annexb(cmd: List[str], input_path: Path, label: str) -> bool:
+    duration = get_video_duration(str(input_path))
+    result = capture_ffmpeg_real_time(cmd, label, duration)
+    if context_tracker.should_print:
+        print()
+    return result.get("exit_code", -1) == 0
+
+
 def _to_annexb(input_path: Path, output_path: Path) -> bool:
     cmd = [
         get_ffmpeg_path(),
         "-y",
-        "-i",
-        str(input_path),
-        "-c:v",
-        "copy",
-        "-bsf:v",
-        "hevc_mp4toannexb",
+        "-i", str(input_path),
+        "-c:v", "copy",
+        "-bsf:v", "hevc_mp4toannexb",
         str(output_path),
     ]
-    return _run_command(cmd, f"ffmpeg annexb {input_path.name}")
+    return _ffmpeg_annexb(cmd, input_path, "[yellow]FFMPEG [cyan]Conv annexb")
 
 
 def _to_annexb_hdr10(input_path: Path, output_path: Path) -> bool:
@@ -156,7 +164,8 @@ def _to_annexb_hdr10(input_path: Path, output_path: Path) -> bool:
         "-bsf:v", "hevc_mp4toannexb,hevc_metadata=colour_primaries=9:transfer_characteristics=16:matrix_coefficients=9",
         str(output_path),
     ]
-    return _run_command(cmd, f"ffmpeg hdr10 annexb {input_path.name}")
+    print("")
+    return _ffmpeg_annexb(cmd, input_path, "[yellow]FFMPEG [cyan]Conv HDR10")
 
 
 def _dv_mp4_to_annexb(input_path: Path, output_path: Path) -> bool:
@@ -175,7 +184,7 @@ def _dv_mp4_to_annexb(input_path: Path, output_path: Path) -> bool:
         "-bsf:v", "hevc_mp4toannexb",
         str(output_path),
     ]
-    return _run_command(cmd, f"ffmpeg dv annexb {input_path.name}")
+    return _ffmpeg_annexb(cmd, input_path, "[yellow]FFMPEG [cyan]Conv DV")
 
 
 def _strip_enca(input_path: Path, output_path: Path) -> bool:
@@ -328,14 +337,6 @@ def build_hybrid_output(video_track: Dict[str, Any], other_videos: Iterable[Dict
             output_file.unlink()
         except OSError as exc:
             logger.warning(f"Could not remove existing hybrid output {output_file}: {exc}")
-
-    valid_audio = [t for t in audio_tracks if Path(str(t.get("path") or "")).exists()]
-    valid_subs = [t for t in subtitle_tracks if Path(str(t.get("path") or "")).exists()]
-
-    if valid_audio:
-        console.print(f"[cyan]\nMerging [red]{len(valid_audio)}[/red] audio track(s)...")
-    if valid_subs:
-        console.print(f"[cyan]Merging [red]{len(valid_subs)}[/red] subtitle track(s)...")
 
     mux_cmd: List[str] = [
         mkvmerge, "-o", str(output_file),

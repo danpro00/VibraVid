@@ -19,9 +19,8 @@ class VideoSource:
                 return "Error: Unable to determine video JSON URL"
                         
         try:
-            client = create_client(headers=get_headers())
-            response = client.get(video_url)
-            client.close()
+            with create_client(headers=get_headers()) as client:
+                response = client.get(video_url)
             if response.status_code != 200:
                 return f"Error: Failed to fetch video data (Status: {response.status_code})"
                 
@@ -43,9 +42,8 @@ class VideoSource:
                 'output': '62',
             }
 
-            client = create_client(headers=get_headers())
-            stream_response = client.get('https://mediapolisvod.rai.it/relinker/relinkerServlet.htm', params=params)
-            client.close()
+            with create_client(headers=get_headers()) as client:
+                stream_response = client.get('https://mediapolisvod.rai.it/relinker/relinkerServlet.htm', params=params)
             if stream_response.status_code != 200:
                 return f"Error: Failed to fetch stream URL (Status: {stream_response.status_code})"
                 

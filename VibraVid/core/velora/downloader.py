@@ -25,6 +25,7 @@ from VibraVid.core.velora.bridge import run_download_plan
 from VibraVid.core.velora.subtitle import download_external_tracks_with_progress
 from VibraVid.core.velora._ism_init import build_ism_init_segment, ISM_TIMESCALE
 from VibraVid.core.velora._verify_decrypt import verify_decrypted_media
+from VibraVid.core.muxing.helper.video import _segment_number
 from VibraVid.core.velora.download_utils import (
     normalize_path_key,
     format_size   as _fmt_size,
@@ -46,6 +47,7 @@ CONCURRENT_DL = config_manager.config.get_bool("DOWNLOAD", "concurrent_download"
 THREAD_COUNT = config_manager.config.get_int("DOWNLOAD",  "thread_count")
 RETRY_COUNT = config_manager.config.get_int("REQUESTS",  "max_retry")
 REQUEST_TIMEOUT = config_manager.config.get_int("REQUESTS",  "timeout")
+VERIFY_TLS = config_manager.config.get_bool("REQUESTS", "verify")
 MAX_TOKEN_REFRESH_ROUNDS = config_manager.config.get_int("DOWNLOAD", "max_token_refresh_rounds")
 
 
@@ -679,11 +681,17 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
         encrypted_temp = out_path.with_suffix(".enc.mp4")
 
         try:
-            from VibraVid.core.muxing.helper.video import _segment_number
-            valid_segs = [(p, _segment_number(p)) for p in seg_paths if p.exists() and p.stat().st_size > 0]
+            valid_segs = []
+            for p in seg_paths:
+                try:
+                    if p.stat().st_size > 0:
+                        valid_segs.append((p, _segment_number(p)))
+                except OSError:
+                    continue
+            
             valid_segs.sort(key=lambda item: item[1])
             if not valid_segs:
-                logger.error("Nessun segmento ISM valido trovato per la concatenazione")
+                logger.error("No valid ISM segments found for concatenation")
                 return False
             
             with open(encrypted_temp, "wb") as out:
@@ -691,7 +699,7 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
                 for seg_path, _ in valid_segs:
                     out.write(self._normalize_ism_fragment_sdi(seg_path.read_bytes()))
         except Exception as exc:
-            logger.error(f"Creazione file unificato ISM fallita: {exc}")
+            logger.error(f"ISM unified file creation failed: {exc}")
             return False
         
         logger.info(f"ISM file: {encrypted_temp} ({encrypted_temp.stat().st_size} bytes)")
@@ -710,12 +718,12 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
             pass
 
         if not (ok and out_path.exists() and out_path.stat().st_size > 0):
-            logger.error("Decrittazione post-processing ISM fallita")
+            logger.error("ISM post-processing decryption failed")
             return False
 
         verify_ok, verify_msg = verify_decrypted_media(out_path)
         if not verify_ok:
-            logger.error(f"Verifica post-mux fallita per {out_path.name}: {verify_msg}")
+            logger.error(f"Post-mux verification failed for {out_path.name}: {verify_msg}")
             return False
         logger.info(f"Check post-mux OK for{out_path.name}: {verify_msg}")
 
@@ -1104,6 +1112,7 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
                 "retry_max_delay_seconds": 4.0,
                 "retry_jitter_seconds": 0.25,
                 "proxy_url": get_proxy_url(),
+                "verify_tls": VERIFY_TLS,
                 "headers": headers,
                 "tasks": [
                     {

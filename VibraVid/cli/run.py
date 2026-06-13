@@ -1,9 +1,12 @@
 # 10.12.23
 
 import os
+import re
 import sys
+import json
 import logging
 import argparse
+import subprocess
 from pathlib import Path
 from typing import Callable
 
@@ -26,10 +29,33 @@ from VibraVid.cli.command.download import handle_direct_download
 console = Console()
 msg = Prompt()
 logger = logging.getLogger(__name__)
-COLOR_MAP = {"anime": "red", "film_serie": "yellow", "serie": "green", "song": "grey35"}
-CATEGORY_MAP = {1: "anime", 2: "Film_serie", 3: "serie", 5: "song"}
+COLOR_MAP = {
+    "anime": "red", 
+    "film_serie": "yellow", 
+    "serie": "green", 
+    "song": "grey35"
+}
+CATEGORY_MAP = {
+    1: "anime", 
+    2: "Film_serie", 
+    3: "serie", 
+    5: "song"
+}
 CLOSE_CONSOLE = config_manager.config.get_bool('DEFAULT', 'close_console')
-PERSISTENT_ARGS = {'use_proxy', 'extension', 'close_console'}
+PERSISTENT_ARGS = {
+    'use_proxy', 
+    'extension', 
+    'close_console'
+}
+_VERSION_FLAGS = {
+    "FFmpeg": ["-version"],
+    "FFprobe": ["-version"],
+    "Shaka Packager": ["--version"],
+    "dovi_tool": ["--version"],
+    "mkvmerge": ["--version"],
+    "Bento4 (mp4decrypt)": [],
+    "Bento4 (mp4dump)": [],
+}
 
 
 def run_function(func: Callable[..., None], search_terms: str = None, selections: dict = None) -> None:
@@ -219,23 +245,53 @@ def get_logs_directory() -> str:
     return str(logs_dir)
 
 
+def _extract_version(text: str) -> str:
+    """Pull a version-like token (e.g. 6.1.1, v80.0, 1.6.0.0) out of CLI output."""
+    lines = text.splitlines()
+    for line in lines:
+        if "bento4" in line.lower():
+            m = re.search(r"v?(\d+(?:\.\d+){1,3})", line)
+            if m:
+                return m.group(1)
+    
+    for line in lines:
+        if "version" in line.lower():
+            m = re.search(r"v?(\d+(?:\.\d+){1,3})", line)
+            if m:
+                return m.group(1)
+    
+    m = re.search(r"v?(\d+(?:\.\d+){1,3})", text)
+    return m.group(1) if m else ""
+
+
+def _probe_binary_version(dep_name: str, path: str) -> str:
+    """Best-effort version string for an external binary; '' if it cannot be determined."""
+    if not path:
+        return ""
+    
+    try:
+        if dep_name == "Velora":
+            out = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=5)
+            raw = (out.stdout or out.stderr).strip()
+            first = raw.splitlines()[0] if raw else ""
+            try:
+                return str(json.loads(first).get("version", "")) or _extract_version(raw)
+            except Exception:
+                return _extract_version(raw)
+
+        flags = _VERSION_FLAGS.get(dep_name, ["--version"])
+        out = subprocess.run([path, *flags], capture_output=True, text=True, timeout=5)
+        return _extract_version(f"{out.stdout}\n{out.stderr}")
+    except Exception:
+        return ""
+
+
 def show_dependencies(search_functions):
     """Show all dependency paths: config files, services, and external binaries."""
     console.print(f"  [yellow]Config:[/] [white]{config_manager.config_file_path}[/]")
     console.print(f"  [yellow]Login:[/]  [white]{config_manager.login_file_path}[/]")
     console.print(f"  [yellow]Logs:[/]   [white]{get_logs_directory()}[/]")
     console.print(f"  [yellow]Binary:[/] [white]{binary_paths.get_binary_directory()}[/]")
-    console.print()
-
-    console.print("[bold cyan]Available Services:")
-    for func in sorted(search_functions.values(), key=lambda x: x.indice):
-        if func.source.lower() == "default":
-            base_path = func.base_path if func.base_path else "N/A"
-            service_path = os.path.join(base_path, func.module_name) if base_path != "N/A" else "N/A"
-        else:
-            service_path = os.path.join(func.base_path, func.module_name) if func.base_path else "N/A"
-
-        console.print(f"  [{COLOR_MAP.get(func.use_for, 'white')}][{func.indice}][/] [yellow]{func.module_name.capitalize()}[/]: [white]{service_path}[/]")
     console.print()
 
     console.print("[bold cyan]External Dependencies:")
@@ -253,13 +309,15 @@ def show_dependencies(search_functions):
     for dep_name, dep_path in deps.items():
         status = "[green]OK[/]" if dep_path else "[red]NO[/]"
         path_display = dep_path if dep_path else "[red]Not found[/]"
-        console.print(f"  {status} [yellow]{dep_name}:[/] [white]{path_display}[/]")
+        version = _probe_binary_version(dep_name, dep_path) if dep_path else ""
+        version_display = f" [green](v{version})[/]" if version else ""
+        console.print(f"  {status} [yellow]{dep_name}:[/]{version_display} [white]{path_display}[/]")
     console.print()
 
     console.print("[bold cyan]DRM Device Files:[/]")
     drm_devices = {
-        "Widevine (.wvd)": get_wvd_path(),
-        "PlayReady (.prd)": get_prd_path(),
+        "Widevine": get_wvd_path(),
+        "PlayReady": get_prd_path(),
     }
     for device_name, device_path in drm_devices.items():
         status = "[green]OK[/]" if device_path else "[red]NO[/]"

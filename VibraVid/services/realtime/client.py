@@ -27,9 +27,8 @@ def get_playback_url(video_id: str, bearer_token: str, get_dash: bool, channel: 
         },
         'videoId': video_id,
     }
-    client = create_client()
-    response = client.post(bearer_token[channel]['endpoint'], headers=headers, json=json_data)
-    client.close()
+    with create_client() as client:
+        response = client.post(bearer_token[channel]['endpoint'], headers=headers, json=json_data)
     response.raise_for_status()
 
     if response.status_code == 403:
@@ -48,9 +47,8 @@ def get_bearer_token():
     Returns:
         str: Token Bearer
     """
-    client = create_client(headers=get_headers())
-    response = client.get('https://public.aurora.enhanced.live/site/page/homepage/?include=default&filter[environment]=realtime&v=2')
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.get('https://public.aurora.enhanced.live/site/page/homepage/?include=default&filter[environment]=realtime&v=2')
     return {
         'X-REALM-IT': {
             'endpoint': 'https://public.aurora.enhanced.live/playback/v3/videoPlaybackInfo',

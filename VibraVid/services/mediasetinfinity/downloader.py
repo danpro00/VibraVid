@@ -77,9 +77,8 @@ def try_mpd(url, qualities):
         mpd_url = urlunparse(parsed._replace(path=new_path)).strip()
 
         try:
-            client = create_client()
-            r = client.head(mpd_url)
-            client.close()
+            with create_client() as client:
+                r = client.head(mpd_url)
             if r.status_code == 200:
                 return mpd_url
         except Exception:

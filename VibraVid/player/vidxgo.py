@@ -81,9 +81,8 @@ class VideoSource:
             embed_url = f"{self.embed_domain}/tt{self.imdb_id}/{self.season_number}/{self.episode_number}"
 
         try:
-            client = create_client()
-            response = client.get(embed_url, headers=VIDXGO_HEADERS, timeout=30)
-            client.close()
+            with create_client() as client:
+                response = client.get(embed_url, headers=VIDXGO_HEADERS, timeout=30)
             response.raise_for_status()
             return self.decode_embed_html(response.text)
         except Exception as error:

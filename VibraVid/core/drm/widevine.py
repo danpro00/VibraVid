@@ -206,9 +206,8 @@ def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
 
             # Make license request
             try:
-                client = create_client(headers=req_headers)
-                response = client.post(license_url, **post_kwargs)
-                client.close()
+                with create_client(headers=req_headers) as client:
+                    response = client.post(license_url, **post_kwargs)
             except Exception as e:
                 logger.error(f"License request error for {kid_info}: {e}")
                 console.print(f"[red]License request error for PSSH {pssh[:30]}...: {e}")

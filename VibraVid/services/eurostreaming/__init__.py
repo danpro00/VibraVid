@@ -35,9 +35,8 @@ def title_search(query: str) -> int:
     headers = {'User-Agent': get_userAgent()}
 
     try:
-        client = create_client(headers=headers)
-        resp = client.get(f"{base_url}/wp-json/wp/v2/search", params={'search': query, '_fields': 'id'},)
-        client.close()
+        with create_client(headers=headers) as client:
+            resp = client.get(f"{base_url}/wp-json/wp/v2/search", params={'search': query, '_fields': 'id'},)
         resp.raise_for_status()
         results = resp.json()
     except Exception as e:
@@ -50,9 +49,8 @@ def title_search(query: str) -> int:
             continue
 
         try:
-            client = create_client(headers=headers)
-            post_resp = client.get(f"{base_url}/wp-json/wp/v2/posts/{post_id}", params={'_fields': 'content,title'})
-            client.close()
+            with create_client(headers=headers) as client:
+                post_resp = client.get(f"{base_url}/wp-json/wp/v2/posts/{post_id}", params={'_fields': 'content,title'})
             post_resp.raise_for_status()
             data = post_resp.json()
             title = data.get('title', {}).get('rendered', '')

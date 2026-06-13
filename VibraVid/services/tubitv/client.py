@@ -54,12 +54,11 @@ def get_bearer_token():
     }
 
     print("Logging in to Tubi TV...")
-    client = create_client(headers=get_headers())
-    response = client.post(
-        'https://account.production-public.tubi.io/user/login',
-        json=json_data
-    )
-    client.close()
+    with create_client(headers=get_headers()) as client:
+        response = client.post(
+            'https://account.production-public.tubi.io/user/login',
+            json=json_data
+        )
     
     if response.status_code == 503:
         raise Exception("Service Unavailable: Set VPN to America.")
@@ -108,12 +107,11 @@ def get_playback_url(content_id: str, bearer_token: str) -> Tuple[str, Optional[
         ]
     }
 
-    client = create_client(headers=headers)
-    response = client.get(
-        'https://content-cdn.production-public.tubi.io/api/v2/content',
-        params=params
-    )
-    client.close()
+    with create_client(headers=headers) as client:
+        response = client.get(
+            'https://content-cdn.production-public.tubi.io/api/v2/content',
+            params=params
+        )
     
     json_data = response.json()
     master_playlist_url = json_data['video_resources'][0]['manifest']['url']

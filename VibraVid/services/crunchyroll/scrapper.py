@@ -88,6 +88,11 @@ class GetSerieInfo:
         }
         self._metadata_cache = {}
 
+    def close(self) -> None:
+        """Close the underlying Crunchyroll client session."""
+        if self.client:
+            self.client.close()
+
     def collect_season(self) -> None:
         """Collect all seasons for the series - SINGLE API CALL."""
         try:

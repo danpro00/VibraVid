@@ -52,9 +52,8 @@ class ScrapeSerieAnime:
         """
         try:
             # Get initial episode count
-            client = create_client(headers=self.headers)
-            response = client.get(f"{self.url}/info_api/{self.media_id}/")
-            client.close()
+            with create_client(headers=self.headers) as client:
+                response = client.get(f"{self.url}/info_api/{self.media_id}/")
             response.raise_for_status()
             initial_count = response.json()["episodes_count"]
             
@@ -69,9 +68,8 @@ class ScrapeSerieAnime:
                     "end_range": end_range
                 }
                 
-                client = create_client(headers=self.headers)
-                response = client.get(f"{self.url}/info_api/{self.media_id}/1", params=params)
-                client.close()
+                with create_client(headers=self.headers) as client:
+                    response = client.get(f"{self.url}/info_api/{self.media_id}/1", params=params)
                 response.raise_for_status()
 
                 chunk_episodes = response.json().get("episodes", [])

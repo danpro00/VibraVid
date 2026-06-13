@@ -218,6 +218,7 @@ async def download_external_tracks_with_progress(headers: Dict, external_subtitl
                     "retry_count": config_manager.config.get_int("REQUESTS", "max_retry"),
                     "timeout_seconds": config_manager.config.get_int("REQUESTS", "timeout"),
                     "proxy_url": get_proxy_url(),
+                    "verify_tls": config_manager.config.get_bool("REQUESTS", "verify"),
                     "headers": headers,
                     "tasks": [
                         {

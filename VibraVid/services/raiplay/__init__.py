@@ -27,9 +27,8 @@ def _detect_media_type(path_id: str) -> str:
     """Return 'movie' or 'tv' from RaiPlay program typology. Defaults to 'tv' on any error."""
     try:
         url = f"https://www.raiplay.it/{path_id.lstrip('/')}"
-        client = create_client(headers=get_headers())
-        response = client.get(url)
-        client.close()
+        with create_client(headers=get_headers()) as client:
+            response = client.get(url)
 
         if response.status_code != 200:
             return 'tv'
@@ -72,9 +71,8 @@ def title_search(query: str) -> int:
     }
 
     try:
-        client = create_client(headers=get_headers())
-        response = client.post(search_url, json=json_data)
-        client.close()
+        with create_client(headers=get_headers()) as client:
+            response = client.post(search_url, json=json_data)
         response.raise_for_status()
 
     except Exception as e:

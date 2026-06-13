@@ -50,9 +50,8 @@ def title_search(query: str) -> int:
     }
 
     try:
-        client = create_client(headers=client.headers, cookies=client.cookies)
-        response = client.get(url, params=params)
-        client.close()
+        with create_client(headers=client.headers, cookies=client.cookies) as http_client:
+            response = http_client.get(url, params=params)
         response.raise_for_status()
     except Exception as e:
         console.print(f"[red]Error during Discovery+ search request: {e}")

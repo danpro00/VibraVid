@@ -56,10 +56,11 @@ def title_search(query: str) -> int:
     try:
         response = client.request('GET', api_url, params=params)
         response.raise_for_status()
-
     except Exception as e:
         console.print(f"[red]Site: {site_constants.SITE_NAME}, request search error: {e}")
         return 0
+    finally:
+        client.close()
 
     data = response.json()
     seen_ids = set()

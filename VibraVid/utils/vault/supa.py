@@ -1,6 +1,7 @@
 # 29.01.26
 
 import logging
+import threading
 from typing import List, Optional
 
 from rich.console import Console
@@ -22,7 +23,25 @@ class ExternalSupaDBVault:
         self.headers = {"Content-Type": "application/json"}
         if TOKEN:
             self.headers["Authorization"] = f"Bearer {TOKEN}"
+        
         self.session = create_client(headers=self.headers, http2=True)
+        self._session_lock = threading.Lock()
+        self._prewarm()
+
+    def _prewarm(self) -> None:
+        """Open the TLS connection in a background thread so the first real lookup doesn't pay the handshake."""
+        if not self.base_url:
+            return
+
+        def _warm():
+            try:
+                with self._session_lock:
+                    self.session.get(self.base_url, timeout=10)
+                logger.debug("Supa vault connection prewarmed")
+            except Exception as e:
+                logger.debug(f"Supa vault prewarm skipped (non-fatal): {e}")
+
+        threading.Thread(target=_warm, daemon=True, name="supa-vault-prewarm").start()
 
     def close(self):
         """Close the HTTP session."""
@@ -37,7 +56,8 @@ class ExternalSupaDBVault:
         url = f"{self.base_url}/{endpoint}"
         try:
             logger.debug(f"Post to Supabase endpoint '{endpoint}' with payload: {payload}")
-            response = self.session.post(url, json=payload)
+            with self._session_lock:
+                response = self.session.post(url, json=payload)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -59,13 +79,10 @@ class ExternalSupaDBVault:
 
         url = f"{self.base_url}/track-downloads"
         try:
-            session = create_client(headers=self.headers, http2=True)
-            try:
-                response = session.post(url, json=payload)
-                response.raise_for_status()
-                result = response.json()
-            finally:
-                session.close()
+            with self._session_lock:
+                response = self.session.post(url, json=payload)
+            response.raise_for_status()
+            result = response.json()
 
             logger.info(f"Supabase track_download response: {result}")
             return bool(result.get("success", False))

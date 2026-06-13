@@ -27,10 +27,9 @@ class GetSerieInfo:
         try:
             path = self.path_id.lstrip('/')
             program_url = f"{self.base_url}/{path}"
-            client = create_client(headers=get_headers())
-            response = client.get(program_url)
-            client.close()
-            
+            with create_client(headers=get_headers()) as client:
+                response = client.get(program_url)
+
             # If 404, content is not yet available
             if response.status_code == 404:
                 logger.error(f"Content not yet available: {program_url}")
@@ -125,11 +124,10 @@ class GetSerieInfo:
             base_path = self.path_id.lstrip('/').replace('.json', '')
             url = f"{self.base_url}/{base_path}/{block_id}/{set_id}/episodes.json"
             
-            client = create_client(headers=get_headers())
-            response = client.get(url)
-            client.close()
+            with create_client(headers=get_headers()) as client:
+                response = client.get(url)
             response.raise_for_status()
-            
+
             episodes_data = response.json()
             
             # Navigate nested structure to find cards
