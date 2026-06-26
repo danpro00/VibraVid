@@ -30,8 +30,10 @@ timeout = config_manager.config.get_int("REQUESTS", "timeout")
 
 def fetch_github_releases():
     """Fetch releases data from GitHub API (sync)"""
+    url = f"https://api.github.com/repos/{__author__}/{__title__}/releases"
+    logger.info(f"Checking latest {__title__} release: {url}")
     with create_client(headers=get_headers()) as client:
-        response = client.get(f"https://api.github.com/repos/{__author__}/{__title__}/releases")
+        response = client.get(url)
     return response.json()
 
 
@@ -141,6 +143,7 @@ def _fetch_latest_velora_version():
     """Return the latest Velora version from the Velora repo's Cargo.toml, or None."""
     try:
         url = f"https://raw.githubusercontent.com/{__author__}/Velora/main/Cargo.toml"
+        logger.info(f"Checking latest Velora version: {url}")
         with create_client(headers=get_headers()) as client:
             response = client.get(url)
         response.raise_for_status()
@@ -219,9 +222,7 @@ def check_velora_update():
     setup_system.reset_velora_path()
 
     new_path = get_velora_path()
-    if new_path:
-        console.print(f"[#06A77D]Velora updated to {_get_local_velora_version(new_path) or latest_version}")
-    else:
+    if not new_path:
         console.print("[#E63946]Velora re-download failed")
 
 

@@ -1,5 +1,8 @@
 # 18.12.25
 
+from ._log_buffer import install_startup_buffer
+install_startup_buffer()
+
 from .config import config_manager
 from .console import start_message
 from .console import TVShowManager

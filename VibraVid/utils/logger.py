@@ -8,6 +8,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 from VibraVid.utils import config_manager
+from VibraVid.utils._log_buffer import flush_startup_buffer
 
 
 # INFO    → info, warning, error, critical
@@ -30,6 +31,7 @@ def setup_logger(name=None, no_log: bool = False):
 
     if no_log:
         _log_file = None
+        flush_startup_buffer(None)
         logger = logging.getLogger(name)
         logger.setLevel(LOG_LEVEL)
         root_logger = logging.getLogger()
@@ -74,7 +76,12 @@ def setup_logger(name=None, no_log: bool = False):
             file_handler.setFormatter(log_format)
             file_handler.setLevel(LOG_LEVEL)  # ← era fisso a INFO, ora usa la variabile
             root_logger.addHandler(file_handler)
-            
+
+            # Replay records captured before the handler existed (config load,
+            # domains/update/velora requests) so they land in the log file in
+            # chronological order, before the init marker below.
+            flush_startup_buffer(file_handler)
+
             logging.captureWarnings(True)
             root_logger.info(f"--- Logging initialized: {_log_file} ---")
         except Exception as e:

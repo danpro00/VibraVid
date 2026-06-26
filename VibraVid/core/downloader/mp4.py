@@ -16,6 +16,7 @@ from rich.progress import Progress, TextColumn
 from VibraVid.utils.http_client import create_client, get_userAgent
 from VibraVid.utils import config_manager, os_manager, internet_manager
 from VibraVid.utils.hooks import execute_hooks
+from VibraVid.core.muxing.helper.video import get_media_metadata
 from VibraVid.core.ui.progress_bar import CustomBarColumn
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
@@ -362,6 +363,8 @@ class MP4FileDownloader:
             if PostDownloadDecryptor.has_keys(self.key):
                 self._decryptor.run(self.path, self.key, self.download_id)
 
+            self._resolve_media_tokens()
+
             if self.download_id:
                 download_tracker.complete_download(self.download_id, success=False, error=self._incomplete_err)
             return self.path, True, None
@@ -383,6 +386,9 @@ class MP4FileDownloader:
         # Post-download decryption
         if PostDownloadDecryptor.has_keys(self.key):
             self._decryptor.run(self.path, self.key, self.download_id)
+
+        # Resolve media tokens (quality/codec/language) by probing the finished file.
+        self._resolve_media_tokens()
 
         # GUI completion
         if self.download_id:
@@ -406,6 +412,56 @@ class MP4FileDownloader:
 
         return self.path, self._interrupt.kill_download, None
 
+    # Tokens whose value is only known after probing the finished file.
+    _MEDIA_PLACEHOLDERS = ("%(quality)", "%(language)", "%(video_codec)", "%(audio_codec)")
+
+    def _resolve_media_tokens(self) -> None:
+        """Probe the finished file and resolve media tokens (quality/codec/language) in self.path.
+
+        MP4FileDownloader writes straight to the templated path, so placeholders
+        like ``[%(quality)]`` survive unless we probe the muxed file here (the same
+        way BaseDownloader._finalize does for segmented downloaders).
+        """
+        if not any(p in self.path for p in self._MEDIA_PLACEHOLDERS):
+            return
+
+        try:
+            metadata = get_media_metadata(self.path)
+            logger.info(f"Metadata for dynamic rename: {metadata}")
+
+            replacements = {
+                "quality": metadata.get("quality", ""),
+                "language": metadata.get("language", ""),
+                "video_codec": metadata.get("video_codec", ""),
+                "audio_codec": metadata.get("audio_codec", ""),
+            }
+
+            root, ext = os.path.splitext(self.path)
+            for key, val in replacements.items():
+                placeholder = f"%({key})"
+                if val:
+                    root = root.replace(placeholder, str(val))
+                else:
+                    root = root.replace(f" [{placeholder}]", "").replace(f"[{placeholder}]", "")
+                    root = root.replace(f" ({placeholder})", "").replace(f"({placeholder})", "")
+                    root = root.replace(placeholder, "")
+
+            root = root.replace("  ", " ").rstrip(" .")
+            new_path = root + ext
+
+            if new_path != self.path:
+                new_dir = os.path.dirname(new_path)
+                if new_dir and not os.path.exists(new_dir):
+                    os.makedirs(new_dir, exist_ok=True)
+
+                # os.replace (not os.rename) so re-downloading overwrites on Windows.
+                os.replace(self.path, new_path)
+                self.path = new_path
+                logger.info(f"Dynamic rename applied: {self.path}")
+
+        except Exception as exc:
+            console.print(f"[yellow]Warning: Dynamic rename failed: {exc}")
+
     def _rename_temp(self) -> bool:
         last_exc = None
         for attempt in range(10):
@@ -423,20 +479,6 @@ class MP4FileDownloader:
 
 
 def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None) -> tuple:
-    """
-    Backward-compatible entry point — wraps ``MP4FileDownloader.download()``.
-
-    Parameters
-    ----------
-    url         : URL of the file to download.
-    path        : Local file path to save to.
-    referer     : Optional ``Referer`` header.
-    headers_    : Optional extra headers dict.
-    download_id : Optional GUI tracking ID.
-    site_name   : Optional site name for GUI/analytics.
-    label       : Progress-bar label (default ``"MP4"``; use ``"Audio"`` for music).
-    key         : Decryption key(s) — ``KeysManager``, ``"kid:key"`` string,
-    """
     return MP4FileDownloader(
         url=url,
         path=path,

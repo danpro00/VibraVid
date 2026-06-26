@@ -6,11 +6,6 @@ import logging
 from typing import Callable, Optional
 
 from rich.console import Console
-from pywidevine.cdm import Cdm
-from pywidevine.device import Device
-from pywidevine.device import DeviceTypes
-from pywidevine.remotecdm import RemoteCdm
-from pywidevine.pssh import PSSH
 
 from VibraVid.setup import get_info_wvd, binary_paths
 from VibraVid.utils.http_client import create_client
@@ -82,6 +77,12 @@ def get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path: 
 
 def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path: str, cdm_remote_api: list[str], headers: dict = None, license_data: dict = None, license_certificate: str = None, license_request_fn: Optional[Callable[[bytes], bytes]] = None):
     """Extract Widevine keys using local or remote CDM device."""
+    from pywidevine.cdm import Cdm
+    from pywidevine.device import Device
+    from pywidevine.device import DeviceTypes
+    from pywidevine.remotecdm import RemoteCdm
+    from pywidevine.pssh import PSSH
+
     device = None
     cdm = None
 

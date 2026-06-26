@@ -23,7 +23,7 @@ class SupaTracker:
                 logger.warning("SupaTracker: supa_vault not initialized")
                 return
 
-            title_str = "://generic"
+            title_str = (title or "").strip() or "://generic"
             media_type_str = (media_type or "").strip()
             site_str = (site or "").strip().lower()
             logger.info(f"SupaTracker: title={title_str} type={media_type_str} service={site_str}")

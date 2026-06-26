@@ -190,7 +190,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 10000) {
 // ========== DOWNLOADS (INLINE) ==========
 const expandedRows = new Set();
 const UPDATE_INTERVAL_ACTIVE = 700;   // 0.7s when downloads are activ
-const UPDATE_INTERVAL_IDLE = 15000;    // 15s when no active downloads
+const UPDATE_INTERVAL_IDLE = 3000;    // 3s when no active downloads
 let updateIntervalId = null;
 let isPageVisible = true;
 let isFetching = false;

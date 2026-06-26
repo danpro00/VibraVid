@@ -5,10 +5,6 @@ import base64
 import logging
 
 from rich.console import Console
-from pyplayready.cdm import Cdm
-from pyplayready.device import Device
-from pyplayready.remote.remotecdm import RemoteCdm
-from pyplayready.system.pssh import PSSH
 
 from VibraVid.setup import get_info_prd, binary_paths
 from VibraVid.utils.http_client import create_client
@@ -76,6 +72,11 @@ def get_playready_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
 
 def _get_playready_keys_local_cdm(pssh_list: list[dict], license_url: str, cdm_device_path: str, cdm_remote_api: list[str], headers: dict = None, license_data: dict = None):
     """Extract PlayReady keys using local or remote CDM device."""
+    from pyplayready.cdm import Cdm
+    from pyplayready.device import Device
+    from pyplayready.remote.remotecdm import RemoteCdm
+    from pyplayready.system.pssh import PSSH
+
     cdm = None
     if cdm_device_path is not None:
         console.print(f"\n{get_info_prd(cdm_device_path)}")
