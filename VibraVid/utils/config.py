@@ -11,6 +11,8 @@ from typing import Any, List, Dict
 from curl_cffi import requests
 from rich.console import Console
 
+from . import _startup_prefetch
+
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -22,7 +24,7 @@ GITHUB_DOMAINS_PATH = '.github/script/domains.json'
 
 CONFIG_DOWNLOAD_URL = 'https://raw.githubusercontent.com/AstraeLabs/VibraVid/refs/heads/main/Conf/config.json'
 CONFIG_LOGIN_DOWNLOAD_URL = 'https://raw.githubusercontent.com/AstraeLabs/VibraVid/refs/heads/main/Conf/login.json'
-DOMAINS_DOWNLOAD_URL = 'https://domains-tracker.server66.workers.dev/'
+DOMAINS_DOWNLOAD_URL = 'https://domains-tracker.server66.workers.dev'
 
 
 _MISSING = object()
@@ -238,7 +240,6 @@ class ConfigManager:
 
             if os.path.exists(package_conf):
                 self.base_path = package_base
-                logger.info("Found Conf directory in package base, base path set: " + self.base_path)
             else:
                 # Strategy 3: pip install without -e: use current working directory
                 # This allows users to place Conf in their working directory
@@ -247,7 +248,6 @@ class ConfigManager:
 
         # Initialize conf directory path
         self.conf_path = os.path.join(self.base_path, 'Conf')
-        logger.info(f"ConfigManager initialized with base path: {self.base_path} and conf path: {self.conf_path}")
 
         # Create conf directory if it doesn't exist
         if not os.path.exists(self.conf_path):
@@ -262,7 +262,6 @@ class ConfigManager:
         logger.info(f"Config file path: {self.config_file_path}")
         logger.info(f"Login file path: {self.login_file_path}")
         logger.info(f"Domains file path: {self.domains_path}")
-        logger.info(f"GitHub domains file path: {self.github_domains_path}")
 
         # Initialize data structures
         self._config_data = {}
@@ -281,7 +280,6 @@ class ConfigManager:
         )
         self.login = ConfigAccessor(self._login_data, self.cache, "login", self._cache_enabled)
         self.domain = ConfigAccessor(self._domains_data, self.cache, "domain", self._cache_enabled)
-        logger.info("Config accessors initialized with caching enabled")
 
         # Load the configuration
         self.fetch_domain_online = True
@@ -296,8 +294,6 @@ class ConfigManager:
 
     def _load_config(self) -> None:
         """Load the main configuration file."""
-        logger.info(f"Loading configuration from: {self.config_file_path}")
-
         if not os.path.exists(self.config_file_path):
             logger.info("Configuration file not found, attempting to download from repository")
             self._download_file(CONFIG_DOWNLOAD_URL, self.config_file_path, "config.json")
@@ -460,7 +456,6 @@ class ConfigManager:
 
     def _update_settings_from_config(self) -> None:
         """Update internal settings from loaded configurations."""
-        logger.info("Updating internal settings from configuration")
         default_section = self._config_data.get('DEFAULT', {})
         self.fetch_domain_online = default_section.get('fetch_domain_online', True)
 
@@ -492,23 +487,19 @@ class ConfigManager:
 
     def _load_site_data_online(self) -> None:
         """Load site data from GitHub and update local domains.json file."""
-        headers = {"User-Agent": "Mozilla/5.0"}
         try:
+            _startup_prefetch.start()
             logger.info(f"Fetching site data from GitHub: {DOMAINS_DOWNLOAD_URL}")
-            response = requests.get(DOMAINS_DOWNLOAD_URL, headers=headers, timeout=4)
+            data = _startup_prefetch.collect("domains", timeout=5)
 
-            if response.status_code == 200:
+            if data is not None:
                 self._domains_data.clear()
-                self._domains_data.update(response.json())
+                self._domains_data.update(data)
                 self._save_domains_to_appropriate_location()
 
             else:
-                console.print(f"[red]GitHub request failed: HTTP {response.status_code}, {response.text[:100]}")
+                console.print("[red]GitHub request failed")
                 self._handle_site_data_fallback()
-
-        except json.JSONDecodeError as e:
-            console.print(f"[red]Error parsing JSON from GitHub: {str(e)}")
-            self._handle_site_data_fallback()
 
         except Exception as e:
             console.print(f"[red]GitHub connection error: {str(e)}")
@@ -516,7 +507,6 @@ class ConfigManager:
 
     def _save_domains_to_appropriate_location(self) -> None:
         """Save domains to the conf directory."""
-        logger.info("Saving domains to local file after successful GitHub fetch")
         try:
             with open(self.domains_path, 'w', encoding='utf-8') as f:
                 json.dump(self._domains_data, f, indent=4, ensure_ascii=False)

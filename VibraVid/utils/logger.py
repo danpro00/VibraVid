@@ -83,12 +83,11 @@ def setup_logger(name=None, no_log: bool = False):
             flush_startup_buffer(file_handler)
 
             logging.captureWarnings(True)
-            root_logger.info(f"--- Logging initialized: {_log_file} ---")
         except Exception as e:
             print(f"Error: Could not create file handler for {_log_file}: {e}", file=sys.stderr)
             raise
 
     return logger
 
-# Init
+
 logger = logging.getLogger(__name__)

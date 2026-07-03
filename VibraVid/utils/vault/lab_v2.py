@@ -90,7 +90,7 @@ class LabDBVault:
                 return resolved
         return kid.replace("-", "").strip().lower()
 
-    def set_key(self, kid: str, key: str, drm_type: str, license_url: str, pssh: str = None, label: str = None) -> bool:
+    def set_key(self, kid: str, key: str, license_url: str, pssh: str = None, label: str = None) -> bool:
         """
         Store a single DRM key in the lab vault.
 
@@ -99,7 +99,7 @@ class LabDBVault:
         """
         pass
 
-    def set_keys(self, keys_list: List[str], drm_type: str, license_url: str, pssh: str = None, kid_to_label: Optional[dict] = None) -> int:
+    def set_keys(self, keys_list: List[str], license_url: str, pssh: str = None, kid_to_label: Optional[dict] = None) -> int:
         """
         Store multiple DRM keys in the lab vault.
 
@@ -108,7 +108,7 @@ class LabDBVault:
         """
         pass
 
-    def get_keys_by_pssh(self, license_url: str, pssh: str, drm_type: str) -> List[str]:
+    def get_keys_by_pssh(self, license_url: str, pssh: str) -> List[str]:
         """
         Retrieve all keys for a given license URL and PSSH.
 
@@ -117,7 +117,7 @@ class LabDBVault:
         """
         pass
 
-    def get_keys_by_kids(self, license_url: Optional[str], kids: List[str], drm_type: str, pssh: str = None) -> List[str]:
+    def get_keys_by_kids(self, license_url: Optional[str], kids: List[str], pssh: str = None) -> List[str]:
         """
         Retrieve keys for one or more KIDs
         """
@@ -149,9 +149,9 @@ class LabDBVault:
 
         return results
 
-    def get_keys_by_kid(self, license_url: Optional[str], kid: str, drm_type: str) -> List[str]:
+    def get_keys_by_kid(self, license_url: Optional[str], kid: str) -> List[str]:
         """Convenience wrapper for a single KID lookup."""
-        return self.get_keys_by_kids(license_url, [kid], drm_type)
+        return self.get_keys_by_kids(license_url, [kid])
 
 
 is_lab_db_valid = bool(VAULT_URL and TOKEN)

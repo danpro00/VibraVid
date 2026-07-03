@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 from rich.console import Console
 
@@ -129,11 +130,6 @@ class HLSParser:
                         stream.playlist_url = urljoin(self._base_url, nxt)
                         if not stream.id:
                             stream.id = _make_video_id(stream)
-                            try:
-                                variant_drm, variant_content = self.parse_variant(stream.playlist_url)
-                                stream.is_live = (variant_content is not None) and ("#EXT-X-ENDLIST" not in variant_content)
-                            except Exception:
-                                stream.is_live = False
 
                         # Skip duplicates: the same video variant (STABLE-VARIANT-ID)
                         # is listed once per audio group, producing identical-codec entries.
@@ -185,6 +181,9 @@ class HLSParser:
         if not any(s.type == "video" for s in streams):
             streams = self._variant_fallback(streams, master_drm)
 
+        # Resolve child media playlists to extract the real DRM PSSH/KID and the live/VOD flag.
+        self._resolve_drm(streams, master_drm)
+
         for stream in streams:
             # Populate stream.encryption_method from DRMInfo if not already set
             if not stream.encryption_method and stream.drm and stream.drm.method:
@@ -199,7 +198,7 @@ class HLSParser:
                 # SAMPLE-AES/CBCS: Live per-segment decryption not viable
                 # Must merge all segments first, then post-decrypt complete MP4 with Shaka
                 stream.supports_live_decryption = False
-                logger.info(f"Stream {stream.id}: SAMPLE-AES detected - Using post-merge decryption")
+                logger.debug(f"Stream {stream.id}: SAMPLE-AES detected - Using post-merge decryption")
             else:
                 # CENC, Widevine, or unencrypted: Can support live decryption
                 stream.supports_live_decryption = True
@@ -228,6 +227,41 @@ class HLSParser:
         except Exception as exc:
             logger.error(f"HLSParser: parse_variant failed for {variant_url}: {exc}")
             return DRMInfo(), None
+
+    def _resolve_drm(self, streams: List[Stream], master_drm: DRMInfo) -> None:
+        """Fetch each video/audio track's own child playlist to extract the real DRM
+        method/PSSH/KID. Subtitles are excluded: Apple/multi-DRM WebVTT renditions are
+        always plain text, so resolving them would just waste a request."""
+        advertised = master_drm.get_all_drm_types() if master_drm else []
+
+        # Skip renditions that already carry real DRM (e.g. media-playlist fallback)
+        # and the manifest itself (self-referential fallback URL).
+        targets = [
+            s for s in streams
+            if s.type in ("video", "audio") and s.playlist_url and s.playlist_url != self.m3u8_url
+            and not (s.drm and s.drm.is_encrypted())
+        ]
+
+        if not targets:
+            return
+
+        def _resolve(stream: Stream):
+            variant_drm, variant_content = self.parse_variant(stream.playlist_url or "")
+            return stream, variant_drm, variant_content
+
+        with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+            for stream, variant_drm, variant_content in ex.map(_resolve, targets):
+                if variant_content is not None:
+                    stream.is_live = "#EXT-X-ENDLIST" not in variant_content
+
+                if variant_drm and variant_drm.is_encrypted():
+                    # Merge advertised systems so the table reflects every system
+                    # even if the child playlist declares fewer of them.
+                    for dt in advertised:
+                        variant_drm.add_advertised_type(dt)
+                    
+                    stream.drm = variant_drm
+                    logger.debug(f"HLS DRM resolved from child playlist | {stream.id}: {variant_drm!r}")
 
     def _parse_stream_inf(self, line: str) -> Stream:
         s = Stream(type="video", format="hls")
@@ -369,6 +403,19 @@ class HLSParser:
     def _parse_drm_tags(self, content: str) -> DRMInfo:
         info = DRMInfo()
 
+        for cpc in re.findall(r'ALLOWED-CPC="([^"]+)"', content, re.IGNORECASE):
+            for token in cpc.split(","):
+                t = token.strip().lower()
+                if not t:
+                    continue
+                
+                if "widevine" in t or _DRMSystems.WIDEVINE in t.replace("-", ""):
+                    info.add_advertised_type(DRMType.WIDEVINE)
+                elif "playready" in t or "com.microsoft" in t:
+                    info.add_advertised_type(DRMType.PLAYREADY)
+                elif "streamingkeydelivery" in t or "fairplay" in t or "com.apple" in t:
+                    info.add_advertised_type(DRMType.FAIRPLAY)
+
         aes_m = re.search(r'#EXT-X-(?:SESSION-)?KEY:.*?METHOD=(AES[^,"\s]+)', content, re.IGNORECASE)
         if aes_m:
             info.method = aes_m.group(1)
@@ -437,7 +484,7 @@ class HLSParser:
                             kid = _DRMSystems.extract_kid_from_playready_pro(b64)
                             if kid:
                                 info.set_kid(kid)
-                                logger.info(f"PlayReady WRM Header KID extracted: {kid}")
+                                logger.debug(f"PlayReady WRM Header KID extracted: {kid}")
                             info.set_pssh(b64, DRMType.PLAYREADY)
                         else:
                             info.set_pssh(b64)

@@ -57,9 +57,9 @@ def process_season_selection(scrape_serie: Any, seasons_count: int, season_selec
     else:
         index_season_selected = season_selection
         is_manual_input = False
-        #console.print(f"\n[cyan]Using provided season selection: [yellow]{season_selection}")
         logger.info(f"Using provided season selection: {season_selection}")
-    
+    context_tracker.cli_season_selection = index_season_selected
+
     # Get available season numbers
     seasons_list = scrape_serie.seasons_manager.seasons
     available_numbers = [s.number for s in seasons_list]
@@ -145,6 +145,7 @@ def process_episode_download(index_season_selected: int, scrape_serie: Any, down
         return
     
     if download_all:
+        context_tracker.cli_episode_selection = "*"
         for i_episode in range(1, episodes_count + 1):
             if _is_user_stop_requested():
                 console.print(f"[yellow]Download stopped by user before episode {i_episode}.")
@@ -241,6 +242,7 @@ def process_episode_download(index_season_selected: int, scrape_serie: Any, down
                 return
 
             last_command = Prompt.ask("[red]Enter valid episode numbers or indices")
+        context_tracker.cli_episode_selection = last_command
 
         # Download selected episodes if not stopped
         for i_episode in list_episode_select:

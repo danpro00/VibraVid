@@ -147,6 +147,7 @@ def get_select_title(table_show_manager, media_search_manager):
             if 0 <= selected_index < len(media_search_manager.media_list):
                 table_show_manager.clear()
                 logger.info(f"Media item selected: {media_search_manager.media_list[selected_index]}")
+                context_tracker.cli_item = selected_index
                 return media_search_manager.get(selected_index)
             else:
                 console.print("\n[red]Invalid or out-of-range index. Please try again.")
@@ -334,6 +335,10 @@ def base_search(title_search_func: Callable[[str], int], process_result_func: Ca
         actual_search_query = string_to_search.strip()
     else:
         actual_search_query = msg.ask(f"\n[purple]Insert a word to search in [green]{site_name}").strip()
+
+    context_tracker.cli_search = actual_search_query
+    context_tracker.cli_season_selection = None
+    context_tracker.cli_episode_selection = None
 
     # Search on database
     len_database = title_search_func(str(actual_search_query).strip())

@@ -72,7 +72,6 @@ def _default_headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
     if not extra or "user-agent" not in {k.lower() for k in extra.keys()}:
         headers["User-Agent"] = get_userAgent()
-        logger.info(f"Using User-Agent: {headers['User-Agent']}")
 
     if extra:
         headers.update(extra)

@@ -14,7 +14,7 @@ def detect_stream_type(url: str) -> str:
     Guess the stream type from the URL path.
     Falls back to a HEAD request when the extension is ambiguous.
 
-    Returns: 'mp4' | 'hls' | 'dash' | 'ism'
+    Returns: 'mp4' | 'hls' | 'dash' | 'ism' | 'unsupported'
     """
     clean = url.lower().split('?')[0].rstrip('/')
 
@@ -42,13 +42,12 @@ def detect_stream_type(url: str) -> str:
             return 'mp4'
         if 'silverlight' in ct or 'ism' in ct:
             return 'ism'
-    
+
     except Exception as exc:
         logger.debug(f"HEAD probe failed for type detection: {exc}")
 
-    # Last resort: assume HLS (most common streaming format)
-    logger.warning(f"Could not detect stream type for URL, defaulting to HLS: {url}")
-    return 'hls'
+    logger.warning(f"Could not detect stream type for URL, marking unsupported: {url}")
+    return 'unsupported'
 
 
 def parse_headers(headers_list: Optional[list]) -> dict:

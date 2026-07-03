@@ -9,6 +9,7 @@ from rich.console import Console
 
 from VibraVid.utils import config_manager, os_manager
 from VibraVid.utils.http_client import get_headers
+from VibraVid.utils.vault_upload.hook import try_fetch
 from VibraVid.setup import get_wvd_path, get_prd_path
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.utils.media_players import MediaPlayers
@@ -35,10 +36,10 @@ DELAY_SS = config_manager.config.get_int("DOWNLOAD", "delay_after_download")
 class ISM_Downloader(BaseDownloader):
     def __init__(self, ism_url: Optional[str] = None, ism_content: Optional[str] = None, headers: Optional[Dict[str, str]] = None,
         manifest_refresh_fn: Optional[Callable[[], Optional[str]]] = None,
-        license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None,
+        license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None, license_data: Optional[dict] = None,
         output_path: Optional[str] = None, drm_preference = DRMType.PLAYREADY, key: Optional[str] = None, cookies: Optional[Dict[str, str]] = None,
         max_segments: Optional[int] = None, max_time=None,
-        other_tracks: Optional[list] = None
+        other_tracks: Optional[list] = None, chapters: Optional[list] = None
     ):
         """
         Parameters:
@@ -49,20 +50,23 @@ class ISM_Downloader(BaseDownloader):
             - license_url: URL of the license server for DRM key acquisition.
             - license_headers: HTTP headers for license requests (defaults to *headers*).
             - license_certificate: Widevine certificate (base64) for license challenge.
+            - license_data: Extra JSON fields merged into the license POST body alongside the challenge (e.g. playbackEnvelope/sessionHandoffToken for services like Amazon).
             - output_path: Output file path. Default: "download.{EXTENSION_OUTPUT}".
             - key: Manual decryption key (hex format) if known.
             - cookies: HTTP cookies for authenticated requests.
             - max_segments: Maximum number of segments to download (for testing). Default: None (all).
             - max_time: Maximum content duration to download, e.g. "01:00:00" or 3600 seconds. Default: None (all).
+            - chapters: Chapter markers to inject into the muxed output, e.g. [{"name": str, "seconds": int}]. Default: context_tracker.chapters.
         """
         self.ism_url = self._resolve_url(str(ism_url).strip())
         self.ism_content = ism_content
         self.headers = headers or get_headers()
         self.manifest_refresh_fn = manifest_refresh_fn
-        
+
         self.license_url = str(license_url).strip() if license_url else None
         self.license_headers = license_headers or self.headers
         self.license_certificate = license_certificate
+        self.license_data = license_data
         self.drm_preference = drm_preference
 
         self.key = key
@@ -70,6 +74,7 @@ class ISM_Downloader(BaseDownloader):
         self.max_segments = max_segments if max_segments is not None else context_tracker.max_segments
         self.max_time = _parse_max_time(max_time if max_time is not None else context_tracker.max_time)
         self.other_tracks = other_tracks or []
+        self.chapters = chapters if chapters is not None else context_tracker.chapters
         logger.info(f"Initialized ISM_Downloader with URL: {self.ism_url}, License URL: {self.license_url}, DRM Pref: {self.drm_preference}, Max Segments: {self.max_segments}, Max Time: {self.max_time}")
 
         self.drm_manager = DRMManager(
@@ -187,6 +192,7 @@ class ISM_Downloader(BaseDownloader):
                     self.license_url,
                     headers=self.license_headers,
                     key=self.key,
+                    license_data=self.license_data,
                 )
             except Exception as exc:
                 logger.error(f"PlayReady key fetch failed: {exc}")
@@ -196,6 +202,7 @@ class ISM_Downloader(BaseDownloader):
                 keys = self.drm_manager.get_wv_keys(
                     drm_psshs[DRMType.WIDEVINE],
                     self.license_url,
+                    license_data=self.license_data,
                     license_certificate=self.license_certificate,
                     headers=self.license_headers,
                     key=self.key,
@@ -213,6 +220,9 @@ class ISM_Downloader(BaseDownloader):
         """Execute the full ISM download pipeline."""
         if self.file_already_exists:
             console.print("[yellow]File already exists.")
+            return self.output_path, False, None
+        
+        if try_fetch(self.output_path):
             return self.output_path, False, None
 
         os_manager.create_path(self.output_dir)
@@ -237,6 +247,9 @@ class ISM_Downloader(BaseDownloader):
         _, _, other_subtitles = split_other_tracks(self.other_tracks)
         if other_subtitles:
             self.media_downloader.external_subtitles = other_subtitles
+
+        if self.chapters:
+            console.print(f"[dim]Adding {len(self.chapters)} external chapter(s).")
 
         # ── Parse ─────────────────────────────────────────────────────────────
         if self.download_id:

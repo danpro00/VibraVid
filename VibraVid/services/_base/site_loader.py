@@ -25,7 +25,7 @@ current_site_var: "contextvars.ContextVar[str | None]" = contextvars.ContextVar(
 
 
 class LazySearchModule:
-    def __init__(self, module_name: str, indice: int, use_for: str = None, source: str = "default", base_path: str = None):
+    def __init__(self, module_name: str, indice: int, use_for: str = None, source: str = "default", base_path: str = None, has_cli_args: bool = False):
         """
         Lazy loader for a search module.
 
@@ -35,6 +35,7 @@ class LazySearchModule:
             use_for: Content types this module supports
             source: Source of the module ('default' or custom path)
             base_path: Base path for custom sources
+            has_cli_args: Whether the module's source defines register_cli_args
         """
         self.module_name = module_name
         self.indice = indice
@@ -43,6 +44,7 @@ class LazySearchModule:
         self._use_for = use_for
         self.source = source
         self.base_path = base_path
+        self.has_cli_args = has_cli_args
     
     def _load_module(self):
         """Load the module on first access."""
@@ -116,7 +118,7 @@ class LazySearchModule:
     @property
     def use_for(self):
         """Get _useFor attribute (loads module if needed).
-        
+
         Returns:
             List of content types this module supports
         """
@@ -124,6 +126,15 @@ class LazySearchModule:
             self._load_module()
 
         return self._use_for
+
+    def get_module(self):
+        """Return the underlying site module, loading it if needed.
+
+        Returns:
+            The imported module object (e.g. to look up optional hooks like 'register_cli_args').
+        """
+        self._load_module()
+        return self._module
     
     def __getitem__(self, index: int):
         """Support tuple unpacking: func, use_for = loaded_functions['name'].
@@ -223,7 +234,8 @@ def load_search_functions() -> Dict[str, LazySearchModule]:
                     logger.warning(f"Module '{module_name}': unknown _useFor='{use_for}' (expected one of {', '.join(KNOWN_CONTENT_TYPES)})")
                     console.print(f"[yellow]Warning: Module '{module_name}' declares unknown _useFor='{use_for}' (expected: {', '.join(KNOWN_CONTENT_TYPES)})[/yellow]")
 
-                source_modules.append((module_name, indice, use_for, source, base_path))
+                has_cli_args = 'def register_cli_args' in content
+                source_modules.append((module_name, indice, use_for, source, base_path, has_cli_args))
                 loaded_module_names.add(module_name)
                 logger.debug(f"Found module '{module_name}' from source '{source}': use_for={use_for}, indice={indice}")
                     
@@ -235,18 +247,18 @@ def load_search_functions() -> Dict[str, LazySearchModule]:
     
     # Check for duplicate indice values
     indice_map = {}
-    for module_name, indice, use_for, source, base_path in modules_metadata:
+    for module_name, indice, use_for, source, base_path, has_cli_args in modules_metadata:
         if indice in indice_map:
             existing_module = indice_map[indice]
             logger.error(f"Duplicate indice detected: Both '{module_name}' and '{existing_module}' have indice={indice}")
             console.print(f"[red]Error: Duplicate indice={indice} for modules '{module_name}' and '{existing_module}'[/red]")
         else:
             indice_map[indice] = module_name
-    
+
     # Sort by index and create lazy loaders with consecutive indices
     sorted_modules = sorted(modules_metadata, key=lambda x: x[1])
-    for new_indice, (module_name, old_indice, use_for, source, base_path) in enumerate(sorted_modules):
-        loaded_functions[f'{module_name}_search'] = LazySearchModule(module_name, new_indice, use_for, source, base_path)
+    for new_indice, (module_name, old_indice, use_for, source, base_path, has_cli_args) in enumerate(sorted_modules):
+        loaded_functions[f'{module_name}_search'] = LazySearchModule(module_name, new_indice, use_for, source, base_path, has_cli_args)
 
         # Update indice in __init__.py for each module only if changed and from default source
         if source.lower() == "default":

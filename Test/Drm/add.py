@@ -8,7 +8,6 @@ drm = DRMManager()
 
 results = drm.add_keys(
     keys=[],
-    drm_type="widevine",
     license_url="",
     pssh="",
     kid_to_label={},

@@ -814,7 +814,7 @@ class StreamSelector:
 
     def _select_subtitle(self, streams: list, spec: FilterSpec) -> SelectionResult:
         result = SelectionResult(select_best=spec.select_best, extra=dict(spec.extra))
-        subs = [s for s in streams if getattr(s, "type", "") == "subtitle"]
+        subs = [s for s in streams if getattr(s, "type", "") == "subtitle" and (getattr(s, "playlist_url", None) or getattr(s, "segments", None))]
         logger.debug(f"Subtitle available: {[f'{_language(s)}({_resolved_language(s)})' for s in subs]} | filter: id={spec.id} lang={spec.langs} all={spec.select_all} drop={spec.drop} default={spec.select_default}")
 
         if spec.drop or not subs:

@@ -1,5 +1,7 @@
 # 22.12.25
 
+import re
+
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -7,6 +9,7 @@ from VibraVid.utils import TVShowManager
 from VibraVid.utils.http_client import create_client
 from VibraVid.services._base import site_constants, EntriesManager, Entries
 from VibraVid.services._base.site_search_manager import base_process_search_result, base_search
+from VibraVid.core.ui.tracker import context_tracker
 
 from .downloader import download_film, download_series, download_live
 from .client import get_client
@@ -18,6 +21,84 @@ msg = Prompt()
 console = Console()
 entries_manager = EntriesManager()
 table_show_manager = TVShowManager()
+
+_UUID_RE = re.compile(r'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})')
+
+
+def register_cli_args(parser) -> list:
+    """
+    Register CLI options.
+
+    Returns:
+        list[str]: the argparse 'dest' names this function registered.
+    """
+    group = parser.add_argument_group('Discovery+ options (--site 10)')
+    group.add_argument('--url', dest='url', default=None, metavar='URL', help='Discovery+ title URL (show or movie).')
+    return ['url']
+
+
+def _resolve_url_to_item(url: str):
+    """Resolve a Discovery+ URL to an item dictionary containing metadata."""
+    uuid_match = _UUID_RE.search(url)
+    if not uuid_match:
+        console.print("[red]Could not extract content ID from URL")
+        return None
+    content_id = uuid_match.group(1)
+
+    client = get_client()
+    is_movie = '/show/' not in url
+
+    try:
+        if is_movie:
+            api_url = f"{client.base_url}/cms/routes/movie/{content_id}"
+            params = {'include': 'default', 'decorators': 'badges'}
+            with create_client(headers=client.headers, cookies=client.cookies) as http_client:
+                response = http_client.get(api_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            content_info = next(
+                (x for x in data.get('included', [])
+                 if x.get('attributes', {}).get('videoType', '').lower() == 'standalone'),
+                None
+            )
+            if not content_info:
+                console.print(f"[red]Could not resolve movie metadata for id '{content_id}'")
+                return None
+
+            attrs = content_info.get('attributes', {})
+            name = attrs.get('name', content_id)
+            premiere_date = attrs.get('airDate', '') or attrs.get('premiereDate', '')
+            year = premiere_date.split('-')[0] if premiere_date else '9999'
+            console.print(f"[cyan]Detected movie from URL: [green]{name}")
+            return {'id': content_id, 'name': name, 'type': 'movie', 'url': url, 'year': year}
+
+        api_url = f"{client.base_url}/cms/routes/show/{content_id}"
+        params = {'include': 'default', 'decorators': 'badges'}
+        with create_client(headers=client.headers, cookies=client.cookies) as http_client:
+            response = http_client.get(api_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        show_info = next(
+            (x for x in data.get('included', [])
+             if x.get('attributes', {}).get('alternateId', '') == content_id),
+            None
+        )
+        if not show_info:
+            console.print(f"[red]Could not resolve show metadata for id '{content_id}'")
+            return None
+
+        attrs = show_info.get('attributes', {})
+        name = attrs.get('name', content_id)
+        premiere_date = attrs.get('premiereDate', '')
+        year = premiere_date.split('-')[0] if premiere_date else '9999'
+        console.print(f"[cyan]Detected series from URL: [green]{name}")
+        return {'id': content_id, 'name': name, 'type': 'tv', 'url': url, 'year': year}
+
+    except Exception as e:
+        console.print(f"[red]Error resolving Discovery+ URL: {e}")
+        return None
 
 
 def title_search(query: str) -> int:
@@ -139,6 +220,13 @@ def process_search_result(select_title, selections=None, scrape_serie=None):
 
 def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: dict = None, selections: dict = None, scrape_serie=None):
     """Wrapper for the generalized search function."""
+    if direct_item is None and not get_onlyDatabase:
+        url = (context_tracker.site_options or {}).get('url')
+        if url:
+            direct_item = _resolve_url_to_item(url)
+            if not direct_item:
+                return False
+
     return base_search(
         title_search_func=title_search,
         process_result_func=process_search_result,

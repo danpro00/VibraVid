@@ -90,14 +90,14 @@ class ExternalSupaDBVault:
             logger.error(f"Supabase track_download error: {e}")
             return False
 
-    def set_keys(self, keys_list: List[str], drm_type: str, license_url: str, pssh: str, kid_to_label: Optional[dict] = None) -> int:
+    def set_keys(self, keys_list: List[str], license_url: str, pssh: str, kid_to_label: Optional[dict] = None) -> int:
         """
         Add multiple keys to the vault in a single bulk request.
 
         Returns:
             int: Number of keys successfully added
         """
-        logger.info(f"Adding {len(keys_list)} keys to vault for DRM type '{drm_type}' and license URL '{license_url}'")
+        logger.info(f"Adding {len(keys_list)} keys to vault for license URL '{license_url}'")
         if not keys_list:
             return 0
 
@@ -125,7 +125,6 @@ class ExternalSupaDBVault:
         payload = {
             "license_url": base_license_url,
             "pssh": pssh,
-            "drm_type": drm_type,
             "keys": keys_payload,
         }
 
@@ -138,7 +137,7 @@ class ExternalSupaDBVault:
         added = result.get("added", 0)
         return added
 
-    def get_keys_by_pssh(self, license_url: str, pssh: str, drm_type: str) -> List[str]:
+    def get_keys_by_pssh(self, license_url: str, pssh: str) -> List[str]:
         """
         Retrieve all keys for a given license URL and PSSH (single request).
 
@@ -149,10 +148,9 @@ class ExternalSupaDBVault:
         payload = {
             "license_url": base_license_url,
             "pssh": pssh,
-            "drm_type": drm_type,
         }
 
-        logger.debug(f"Supabase get_keys_by_pssh: license_url={base_license_url}, drm_type={drm_type}, pssh={pssh[:20]}…")
+        logger.debug(f"Supabase get_keys_by_pssh: license_url={base_license_url}, pssh={pssh[:20]}…")
         result = self._post("get-keys", payload)
         logger.debug(f"Vault response for get_keys_by_pssh: {result}")
 
@@ -161,10 +159,10 @@ class ExternalSupaDBVault:
 
         return [k["kid_key"] for k in result.get("keys", [])]
 
-    def get_keys_by_kids(self, license_url: Optional[str], kids: List[str], drm_type: str, pssh: str = None) -> List[str]:
+    def get_keys_by_kids(self, license_url: Optional[str], kids: List[str], pssh: str = None) -> List[str]:
         """
         Retrieve keys for one or more KIDs in a single bulk request.
-        If license_url is None the search is global (all entries for that drm_type).
+        If license_url is None the search is global.
 
         Returns:
             List[str]: List of "kid:key" strings
@@ -175,7 +173,7 @@ class ExternalSupaDBVault:
         normalized_kids = [k.replace("-", "").strip().lower() for k in kids]
         base_license_url = self._clean_license_url(license_url) if license_url else None
 
-        payload: dict = {"drm_type": drm_type, "kids": normalized_kids}
+        payload: dict = {"kids": normalized_kids}
         if base_license_url:
             payload["license_url"] = base_license_url
 
@@ -187,9 +185,9 @@ class ExternalSupaDBVault:
 
         return [k["kid_key"] for k in result.get("keys", [])]
 
-    def get_keys_by_kid(self, license_url: Optional[str], kid: str, drm_type: str) -> List[str]:
+    def get_keys_by_kid(self, license_url: Optional[str], kid: str) -> List[str]:
         """Convenience wrapper for a single KID lookup."""
-        return self.get_keys_by_kids(license_url, [kid], drm_type)
+        return self.get_keys_by_kids(license_url, [kid])
 
 
 is_supa_external_db_valid = not (VAULT_URL == "")

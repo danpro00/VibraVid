@@ -61,7 +61,9 @@ def _ffprobe_streams(ffprobe: str, file_path: str) -> Tuple[bool, str]:
         codec_names = ", ".join(s.get("codec_name", "?") for s in streams) or "(none)"
         return False, f"no audio/video stream (codec_type=data only): {codec_names}"
 
-    bad = [s for s in media_streams if s.get("codec_name", "unknown") in {"unknown", "none", ""}]
+    # Only video/audio streams indicate encryption when reported as unknown.
+    av_streams = [s for s in media_streams if s.get("codec_type", "") in {"video", "audio"}]
+    bad = [s for s in av_streams if s.get("codec_name", "unknown") in {"unknown", "none", ""}]
     if bad:
         return False, "ffprobe still reports unknown codec — file likely encrypted"
 

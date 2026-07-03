@@ -1,6 +1,7 @@
 # 09.06.26
 
 import re
+import copy
 import logging
 import threading
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,6 +17,7 @@ from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_tim
 from VibraVid.core.velora.downloader import MediaDownloader
 from VibraVid.core.velora._stream_helpers import join_interruptible
 
+from VibraVid.core.decryptor.keys_manager import KeysManager
 from VibraVid.core.utils.selector import StreamSelector, StreamSelectorFormatter
 from VibraVid.core.utils.codec import DV_CODEC_PREFIXES
 from VibraVid.core.muxing import probe_media_file
@@ -72,7 +74,7 @@ def _normalize_lang(s) -> None:
 
 
 class Generic_Downloader(BaseDownloader):
-    def __init__(self, sources: List[Dict[str, Any]], output_path: Optional[str] = None, max_segments: Optional[int] = None, max_time=None, cookies: Optional[Dict[str, str]] = None, custom_filters: Optional[Dict[str, str]] = None,) -> None:
+    def __init__(self, sources: List[Dict[str, Any]], output_path: Optional[str] = None, max_segments: Optional[int] = None, max_time=None, cookies: Optional[Dict[str, str]] = None, custom_filters: Optional[Dict[str, str]] = None, chapters: Optional[list] = None,) -> None:
         """
         Parameters:
             - sources: list of source dicts (see class docstring).
@@ -82,12 +84,14 @@ class Generic_Downloader(BaseDownloader):
             - cookies: default cookies applied to sources without their own.
             - custom_filters: optional {"video","audio","subtitle"} selector
               overrides; otherwise the values from config.json are used.
+            - chapters: Chapter markers to inject into the muxed output, e.g. [{"name": str, "seconds": int}]. Default: context_tracker.chapters.
         """
         self.sources = [dict(s or {}) for s in (sources or [])]
         self.cookies = cookies or {}
         self.max_segments = max_segments if max_segments is not None else context_tracker.max_segments
         self.max_time = _parse_max_time(max_time if max_time is not None else context_tracker.max_time)
         self.custom_filters = custom_filters or {}
+        self.chapters = chapters if chapters is not None else context_tracker.chapters
         self._active: List[Tuple[MediaDownloader, Dict[str, Any]]] = []
         self._dv_stream = None
         self._dv_isolated = False
@@ -282,35 +286,22 @@ class Generic_Downloader(BaseDownloader):
             return
 
         md, source = owner
-        dv_id = self._dv_stream.id
-        dv_res = self._dv_stream.resolution
         self._dv_stream.selected = False
+        target = copy.copy(self._dv_stream)
+        target.selected = True
 
         dv_dir = os_manager.get_sanitize_path(f"{self.output_dir}/_dv")
         os_manager.create_path(dv_dir)
-        content = self._fetch_manifest_content(md.url, source.get("headers") or {}) if source.get("protocol") else None
 
         dv_md = MediaDownloader(
             url=md.url, output_dir=dv_dir, filename=self.filename_base,
             headers=source.get("headers") or {}, cookies=source.get("cookies") or self.cookies,
             download_id=self.download_id, site_name=self.site_name,
             max_segments=self.max_segments, max_time=self.max_time,
-            manifest_content=content, manifest_protocol=source.get("protocol"),
         )
-        dv_md.parse_stream(show_table=False)
+        dv_md.manifest_type = md.manifest_type
+        dv_md.streams = [target]
 
-        target = next((s for s in dv_md.streams if s.id == dv_id), None)
-        if target is None:
-            target = next((s for s in dv_md.streams if s.type == "video" and (s.video_range or "").upper() == "DV" and s.resolution == dv_res), None)
-        
-        if target is None:
-            logger.warning("&dv: DV companion not found on re-parse — skipping DV track")
-            self._dv_stream = None
-            return
-
-        for s in dv_md.streams:
-            s.selected = (s is target)
-        
         setattr(target, "_src_label", "dv")
         self._dv_stream = target
         self._active.append((dv_md, source))
@@ -339,8 +330,9 @@ class Generic_Downloader(BaseDownloader):
                     return False
 
             encrypted_sel = [s for s in sel if _is_encrypted(s)]
+            label = source.get("label") or (str(source.get("url") or "?")[:60])
+
             if encrypted_sel and not source.get("key") and not source.get("license_url"):
-                label = source.get("label") or (str(source.get("url") or "?")[:60])
                 kinds = ", ".join(sorted({s.type for s in encrypted_sel}))
                 console.print(
                     f"[bold red][!] WARNING[/bold red] Source '[yellow]{label}[/yellow]': "
@@ -348,6 +340,16 @@ class Generic_Downloader(BaseDownloader):
                     f"[bold]key[/bold]/[bold]license_url[/bold] provided - these tracks will stay encrypted."
                 )
                 logger.error(f"Generic source '{label}': encrypted {kinds} stream(s) without key/license — will remain encrypted")
+
+            # Warn early per-track when keys ARE provided but none of them match this specific track's KID
+            elif encrypted_sel and source.get("key") and not source.get("license_url"):
+                provided_kids = {kid.lower() for kid, _ in KeysManager.normalize(source.get("key"))}
+                for s in encrypted_sel:
+                    track_kids = {k.lower() for k in (s.drm.get_all_kids() if s.drm else [])}
+                    if track_kids and provided_kids.isdisjoint(track_kids):
+                        track_label = f"{s.type} {s.resolution or s.language or ''}".strip()
+                        console.print(f"[bold red][!] WARNING[/bold red] Source '[yellow]{label}[/yellow]': track [yellow]{track_label}[/yellow] needs KID(s) [magenta]{', '.join(track_kids)}[/magenta] ")
+                        logger.error(f"Generic source '{label}': track {track_label} KID(s) {track_kids} not covered by provided keys")
 
             md._session_live_decrypt = bool(sel) and all(getattr(s, "supports_live_decryption", False) for s in sel)
             md._prepare_labels()
@@ -452,6 +454,9 @@ class Generic_Downloader(BaseDownloader):
             return self.output_path, False, None
 
         os_manager.create_path(self.output_dir)
+
+        if self.chapters:
+            console.print(f"[dim]Adding {len(self.chapters)} external chapter(s).")
 
         # ── 1) Parse every source
         parsed = self._parse_sources()

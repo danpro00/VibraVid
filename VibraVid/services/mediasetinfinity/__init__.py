@@ -1,5 +1,6 @@
 # 21.05.24
 
+import re
 from datetime import datetime
 
 from rich.console import Console
@@ -9,9 +10,10 @@ from VibraVid.utils import TVShowManager
 from VibraVid.utils.http_client import create_client, check_region_availability
 from VibraVid.services._base import site_constants, EntriesManager, Entries
 from VibraVid.services._base.site_search_manager import base_process_search_result, base_search
+from VibraVid.core.ui.tracker import context_tracker
 
 from .downloader import download_series, download_film
-from .client import get_client
+from .client import get_client, get_metadata_by_guid
 
 
 indice = 3
@@ -21,6 +23,44 @@ msg = Prompt()
 console = Console()
 entries_manager = EntriesManager()
 table_show_manager = TVShowManager()
+
+_SERIES_ID_RE = re.compile(r'(SE\d+)')
+_FILM_ID_RE = re.compile(r'(F\d{6,})')
+
+
+def register_cli_args(parser) -> list:
+    """Register CLI options."""
+    group = parser.add_argument_group('Mediaset Infinity options (--site 3)')
+    group.add_argument('--url', dest='url', default=None, metavar='URL', help='Mediaset Infinity title URL (movie or series).')
+    return ['url']
+
+
+def _resolve_url_to_item(url: str):
+    """Resolve a Mediaset Infinity URL to an item dictionary containing metadata."""
+    series_match = _SERIES_ID_RE.search(url)
+    if series_match:
+        serie_id = series_match.group(1)
+        entry = get_metadata_by_guid(serie_id, 'mediaset-prod-all-series-v2')
+        name = entry.get('title') if entry else serie_id
+        year = str(entry.get('year')) if entry and entry.get('year') else '9999'
+        console.print(f"[cyan]Detected series from URL: [green]{name}")
+        return {'id': serie_id, 'name': name, 'type': 'tv', 'url': url, 'year': year}
+
+    film_match = _FILM_ID_RE.search(url)
+    if film_match:
+        film_id = film_match.group(1)
+        entry = get_metadata_by_guid(film_id, 'mediaset-prod-all-programs-v2')
+        if not entry:
+            console.print(f"[red]Could not resolve film metadata for id '{film_id}'")
+            return None
+
+        name = entry.get('title', film_id)
+        year = str(entry.get('year')) if entry.get('year') else '9999'
+        console.print(f"[cyan]Detected film from URL: [green]{name}")
+        return {'id': film_id, 'name': name, 'type': 'film', 'url': url, 'year': year}
+
+    console.print("[red]Could not determine content type (film/series) from URL")
+    return None
 
 
 def title_search(query: str) -> int:
@@ -117,6 +157,13 @@ def process_search_result(select_title, selections=None, scrape_serie=None):
 
 def search(string_to_search: str = None, get_onlyDatabase: bool = False, direct_item: dict = None, selections: dict = None, scrape_serie=None):
     """Wrapper for the generalized search function."""
+    if direct_item is None and not get_onlyDatabase:
+        url = (context_tracker.site_options or {}).get('url')
+        if url:
+            direct_item = _resolve_url_to_item(url)
+            if not direct_item:
+                return False
+
     return base_search(
         title_search_func=title_search,
         process_result_func=process_search_result,

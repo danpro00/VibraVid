@@ -360,14 +360,17 @@ class BaseMediaDownloader:
             codec = v.get_short_codec() or v.codecs or ""
             res = v.resolution or "main"
             parts = []
+            
             if codec:
                 parts.append(f"[yellow]\\[{codec}][/yellow]")
             if res:
                 parts.append(f"[green]{res}[/green]")
             if v.bitrate:
                 parts.append(f"[blue]{v.bitrate_display}[/blue]")
+            
             self._video_label = " ".join(parts)
-            self._video_task_key = f"vid_{res}"
+            codec_key = re.sub(r"[^a-z0-9]+", "", codec.lower()) if codec else ""
+            self._video_task_key = f"vid_{res}_{codec_key}" if codec_key else f"vid_{res}"
         else:
             self._video_label = ""
             self._video_task_key = "vid_main"

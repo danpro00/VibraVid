@@ -77,7 +77,7 @@ class DRMManager:
                 break
 
             logger.info(f"Querying {name} DB for {len(missing)} {drm_type} KID(s) | PSSH={pssh_val}" if pssh_val else f"Querying {name} DB for {len(missing)} {drm_type} KID(s)")
-            keys = list(vdb.get_keys_by_kids(base_license_url, missing, drm_type, pssh_val) or [])
+            keys = list(vdb.get_keys_by_kids(base_license_url, missing, pssh_val) or [])
             if keys:
                 found_keys.extend(keys)
                 source = name
@@ -86,6 +86,11 @@ class DRMManager:
 
     def _store_keys(self, keys_list: list[str], drm_type: str = "manual", base_license_url: str = "generic", pssh_val: str = None, kid_to_label: Optional[dict] = None, source: str = None) -> None:
         """Store keys in all connected vaults, skipping the one they were sourced from."""
+        keys_list = KeysManager(keys_list).get_keys_list()
+        if not keys_list:
+            logger.warning(f"_store_keys: no valid {drm_type} keys to store after validation")
+            return
+
         for name, vdb in self._vaults:
             if name == source:
                 continue  # avoid writing back to the vault we just read from
@@ -94,9 +99,9 @@ class DRMManager:
             try:
                 # local vault does not accept kid_to_label — call with base signature
                 if name == "local":
-                    vdb.set_keys(keys_list, drm_type, base_license_url, pssh_val)
+                    vdb.set_keys(keys_list, base_license_url, pssh_val)
                 else:
-                    vdb.set_keys(keys_list, drm_type, base_license_url, pssh_val, kid_to_label)
+                    vdb.set_keys(keys_list, base_license_url, pssh_val, kid_to_label)
             except Exception as e:
                 logger.error(f"Failed to sync to {name} (will continue): {e}")
                 console.print(f"[yellow]Warning: Could not sync to {name}: {e}")
@@ -259,13 +264,12 @@ class DRMManager:
             key=key,
         )
     
-    def add_keys(self, keys: list[str], drm_type: str, license_url: str, pssh: str = None, kid_to_label: Optional[dict] = None) -> dict[str, int]:
+    def add_keys(self, keys: list[str], license_url: str, pssh: str = None, kid_to_label: Optional[dict] = None) -> dict[str, int]:
         """
         Manually push one or more keys to all connected vaults.
 
         Args:
             keys:         List of "kid:key" strings (e.g. ["abc123:def456"]).
-            drm_type:     DRM type string, e.g. "widevine" or "playready".
             license_url:  License server URL (query params are stripped automatically).
             pssh:         Optional PSSH blob associated with these keys.
             kid_to_label: Optional mapping {kid_hex: label} for track labelling.
@@ -280,11 +284,12 @@ class DRMManager:
         # Validate format
         valid_keys = []
         for entry in keys:
-            if ":" not in entry:
-                logger.warning(f"Skipping malformed key entry (expected 'kid:key'): {entry!r}")
+            normalized = KeysManager(entry).get_keys_list()
+            if not normalized:
+                logger.warning(f"Skipping malformed/invalid key entry (expected 32-hex 'kid:key'): {entry!r}")
                 console.print(f"[yellow]Skipping malformed key: {entry!r}")
                 continue
-            valid_keys.append(entry)
+            valid_keys.extend(normalized)
 
         if not valid_keys:
             console.print("[red]No valid keys to store.")
@@ -294,9 +299,9 @@ class DRMManager:
         results: dict[str, int] = {}
 
         for name, vdb in self._vaults:
-            logger.info(f"[add_keys] Storing {len(valid_keys)} {drm_type} key(s) to {name}")
+            logger.info(f"[add_keys] Storing {len(valid_keys)} key(s) to {name}")
             try:
-                added = vdb.set_keys(valid_keys, drm_type, base_license_url, pssh, kid_to_label)
+                added = vdb.set_keys(valid_keys, base_license_url, pssh, kid_to_label)
                 results[name] = added
             except Exception as e:
                 logger.error(f"[add_keys] Failed to store to {name}: {e}")

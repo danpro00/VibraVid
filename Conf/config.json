@@ -63,7 +63,9 @@
         "pre_run": [],
         "pre_download": [],
         "post_download": [],
-        "post_run": []
+        "post_run": [],
+        "db_store": false,
+        "db_info": {}
     },
     "DRM": {
         "use_cdm": true,

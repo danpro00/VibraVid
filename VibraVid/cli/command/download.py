@@ -46,7 +46,10 @@ def handle_direct_download(args) -> bool:
     # Normalise key arg: single string → one-element list kept as list for
     # the segment-based downloaders; MP4 doesn't use keys so it's ignored.
     key_arg = keys
-    url_type = detect_stream_type(url)
+
+    # Allow forcing the stream type (e.g. --type mp4)
+    forced_type = (getattr(args, 'stream_type', None) or 'auto').lower()
+    url_type = forced_type if forced_type != 'auto' else detect_stream_type(url)
 
     # Lazy import to avoid circular dependency
     from VibraVid.core.downloader import MP4_Downloader, HLS_Downloader, DASH_Downloader, ISM_Downloader
@@ -124,7 +127,8 @@ def handle_direct_download(args) -> bool:
                 return True
 
         else:
-            console.print(f"[red]Unknown stream type: {url_type}")
+            logger.error(f"Unsupported stream type for URL: {url}")
+            console.print("[red]Unsupported: could not detect a valid stream (m3u8/dash/hls/ism).")
             return True
 
     except Exception as exc:

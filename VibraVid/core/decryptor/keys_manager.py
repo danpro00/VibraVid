@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class KeysManager:
-    _HEX_PAIR_RE = re.compile(r"([0-9a-fA-F]{32})\s*:\s*([0-9a-fA-F]{32})")
+    _HEX_PAIR_RE = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32})\s*:\s*([0-9a-fA-F]{32})(?![0-9a-fA-F])")
+    _HEX32_RE = re.compile(r"^[0-9a-fA-F]{32}$")
     _SPLIT_RE = re.compile(r"[|,\s]+")
 
     def __init__(self, keys=None) -> None:
@@ -19,10 +20,20 @@ class KeysManager:
             self.add_keys(keys)
 
     def add_keys(self, keys) -> None:
-        """Parse *keys* (any supported form), normalise and append, skipping duplicates."""
+        """Parse *keys* (any supported form), normalise, validate and append, skipping duplicates."""
         for kid, key in self._iter_pairs(keys):
-            pair = (self._clean(kid), self._clean(key))
-            if pair[1] and pair not in self._keys:
+            ckid, ckey = self._clean(kid), self._clean(key)
+
+            if not self._HEX32_RE.match(ckey):
+                logger.warning(f"Skipping key with invalid format (expected 32 hex chars, got len={len(ckey)}): kid={ckid[:8]}...")
+                continue
+
+            if ckid != "1" and not self._HEX32_RE.match(ckid):
+                logger.warning(f"Skipping pair with invalid KID (expected 32 hex chars, got len={len(ckid)}): kid={ckid}")
+                continue
+
+            pair = (ckid, ckey)
+            if pair not in self._keys:
                 self._keys.append(pair)
 
     def get_keys_list(self) -> list[str]:
@@ -95,26 +106,26 @@ class KeysManager:
     @classmethod
     def resolve_fixed_key(cls, encrypted_path: str, detected_kid: Optional[str], normalized_keys: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """
-        For fixed-key streams (all-zero KID) with multiple candidates, attempt to
-        narrow to the correct key by extracting the real KID from the Widevine PSSH.
+        For fixed-key streams (all-zero KID) with multiple candidates, narrow to the
+        correct key by extracting the real KID from the Widevine PSSH.
 
-        Falls back to the first key if PSSH extraction fails or yields no match.
+        Returns an empty list when the real KID cannot be determined or none of the candidates match it
         """
         if not cls.is_zero_kid(detected_kid) or len(normalized_keys) <= 1:
             return normalized_keys
 
         pssh_kid = extract_widevine_kid(encrypted_path)
         if not pssh_kid:
-            logger.warning("Fixed-key stream with multiple keys but no PSSH KID extracted; using first key")
-            return [normalized_keys[0]]
+            logger.error("Fixed-key stream with multiple keys but no PSSH KID extracted; refusing to guess a key")
+            return []
 
         for pair in normalized_keys:
             if pair[0].lower() == pssh_kid:
                 logger.info(f"Fixed-key stream: selected key by PSSH KID match ({pssh_kid})")
                 return [pair]
 
-        logger.warning(f"No key matched PSSH KID {pssh_kid}; using first key")
-        return [normalized_keys[0]]
+        logger.error(f"No key matched PSSH KID {pssh_kid} (have: {', '.join(p[0][:8] for p in normalized_keys)}); refusing to guess a key")
+        return []
 
     def __len__(self) -> int:
         return len(self._keys)

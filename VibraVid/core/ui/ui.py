@@ -106,7 +106,7 @@ def build_table(streams: list, selected: Optional[Set[int]] = None, cursor: Opti
             codec = s.get_short_codec()
             channels = get_channel_label(s.channels) if s.channels else ""
             language = s.language if s.language not in ("und", "") else ""
-            drm = s.drm.get_drm_display() if s.drm and s.drm.is_encrypted() else ""
+            drm = s.drm.get_drm_display() if s.drm and (s.drm.is_encrypted() or s.drm.get_all_drm_types()) else ""
 
         else:
             # Legacy StreamInfo compatibility

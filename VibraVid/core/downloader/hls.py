@@ -9,6 +9,7 @@ from rich.console import Console
 
 from VibraVid.utils import config_manager, os_manager
 from VibraVid.utils.http_client import get_headers
+from VibraVid.utils.vault_upload.hook import try_fetch
 from VibraVid.core.muxing.helper.video_hybrid import split_other_tracks
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.utils.media_players import MediaPlayers
@@ -37,7 +38,7 @@ class HLS_Downloader(BaseDownloader):
         license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None,
         output_path: Optional[str] = None, drm_preference = DRMType.WIDEVINE, key: Optional[str] = None,
         cookies: Optional[Dict[str, str]] = None, max_segments: Optional[int] = None, max_time=None,
-        other_tracks: Optional[list] = None
+        other_tracks: Optional[list] = None, chapters: Optional[list] = None
     ):
         """
         Parameters:
@@ -53,6 +54,7 @@ class HLS_Downloader(BaseDownloader):
             - cookies: HTTP cookies for authenticated requests.
             - max_segments: Maximum number of segments to download (for testing). Default: None (all).
             - max_time: Maximum content duration to download, e.g. "01:00:00" or 3600 seconds. Default: None (all).
+            - chapters: Chapter markers to inject into the muxed output, e.g. [{"name": str, "seconds": int}]. Default: context_tracker.chapters.
         """
         self.m3u8_url = self._resolve_url(str(m3u8_url).strip())
         self.m3u8_content = m3u8_content
@@ -64,11 +66,12 @@ class HLS_Downloader(BaseDownloader):
         self.license_certificate = license_certificate
         self.drm_preference = drm_preference
         self.key = key
-        
+
         self.cookies = cookies or {}
         self.max_segments = max_segments if max_segments is not None else context_tracker.max_segments
         self.max_time = _parse_max_time(max_time if max_time is not None else context_tracker.max_time)
         self.other_tracks = other_tracks or []
+        self.chapters = chapters if chapters is not None else context_tracker.chapters
         logger.info(f"Initialized HLS_Downloader with URL: {self.m3u8_url}, License URL: {self.license_url}, DRM Pref: {self.drm_preference}, Max Segments: {self.max_segments}, Max Time: {self.max_time}")
 
         self.drm_manager = DRMManager(
@@ -220,6 +223,9 @@ class HLS_Downloader(BaseDownloader):
         if self.file_already_exists:
             console.print("[yellow]File already exists.")
             return self.output_path, False, None
+        
+        if try_fetch(self.output_path):
+            return self.output_path, False, None
 
         os_manager.create_path(self.output_dir)
         self.media_downloader = MediaDownloader(
@@ -241,9 +247,12 @@ class HLS_Downloader(BaseDownloader):
 
         if other_subtitles:
             self.media_downloader.external_subtitles = other_subtitles
-        
+
         if other_videos or other_audios:
             self.media_downloader.external_other_tracks = other_videos + other_audios
+
+        if self.chapters:
+            console.print(f"[dim]Adding {len(self.chapters)} external chapter(s).")
 
         if self.download_id:
             download_tracker.update_status(self.download_id, "Parsing HLS ...")

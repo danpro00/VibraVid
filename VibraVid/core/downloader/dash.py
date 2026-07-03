@@ -10,6 +10,7 @@ from rich.console import Console
 
 from VibraVid.utils import config_manager, os_manager
 from VibraVid.utils.http_client import get_headers
+from VibraVid.utils.vault_upload.hook import try_fetch
 from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_time
 from VibraVid.setup import get_wvd_path, get_prd_path
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
@@ -165,7 +166,7 @@ class DASH_Downloader(BaseDownloader):
         license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None, license_data: Optional[str] = None,
         output_path: Optional[str] = None, drm_preference = DRMType.WIDEVINE, key: Optional[str] = None, cookies: Optional[Dict[str, str]] = None,
         max_segments: Optional[int] = None, max_time=None, other_tracks: Optional[list] = None,
-        license_request_fn: Optional[Callable[[bytes], bytes]] = None
+        license_request_fn: Optional[Callable[[bytes], bytes]] = None, chapters: Optional[list] = None
     ):
         """
         Parameters:
@@ -183,7 +184,9 @@ class DASH_Downloader(BaseDownloader):
             - cookies: HTTP cookies for authenticated requests.
             - max_segments: Maximum number of segments to download (for testing). Default: None (all).
             - max_time: Maximum content duration to download, e.g. "01:00:00" or 3600 seconds. Default: None (all).
+            - chapters: Chapter markers to inject into the muxed output, e.g. [{"name": str, "seconds": int}]. Default: context_tracker.chapters.
         """
+        self.chapters = chapters if chapters is not None else context_tracker.chapters
         self.mpd_url = self._resolve_url(str(mpd_url).strip()) if mpd_url else None
         self.mpd_content = mpd_content
         self.mpd_headers = mpd_headers or get_headers()
@@ -543,6 +546,9 @@ class DASH_Downloader(BaseDownloader):
         if self.file_already_exists:
             console.print("[yellow]File already exists.")
             return self.output_path, False, None
+        
+        if try_fetch(self.output_path):
+            return self.output_path, False, None
 
         os_manager.create_path(self.output_dir)
 
@@ -584,6 +590,9 @@ class DASH_Downloader(BaseDownloader):
 
         if self._dash_audio_tracks and AUDIO_FILTER != "false":
             console.print(f"[dim]Adding {len(self._dash_audio_tracks)} external audio(s) (filtered from {len(self._dash_audio_tracks)}).")
+
+        if self.chapters:
+            console.print(f"[dim]Adding {len(self.chapters)} external chapter(s).")
 
         # ── Parse ─────────────────────────────────────────────────────────────
         if self.download_id:

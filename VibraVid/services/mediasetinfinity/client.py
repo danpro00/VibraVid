@@ -138,7 +138,7 @@ def get_client():
 def get_playback_url(CONTENT_ID):
     """Gets the playback URL for the specified content."""
     headers = get_headers()
-    headers['authorization'] = f'Bearer {class_mediaset_api.getBearerToken()}'
+    headers['authorization'] = f'Bearer {get_client().getBearerToken()}'
 
     json_data = {
         'contentId': CONTENT_ID,
@@ -167,6 +167,22 @@ def get_playback_url(CONTENT_ID):
 
     except Exception as e:
         raise RuntimeError(f"Failed to get playback URL error: {e}")
+
+
+def get_metadata_by_guid(guid, feed):
+    """
+    Fetches a single entry's metadata from a theplatform feed by GUID (no auth required).
+    """
+    url = f'https://feed.entertainment.tv.theplatform.eu/f/PR1GhC/{feed}'
+    try:
+        with create_client(headers={'user-agent': get_userAgent()}) as client:
+            response = client.get(url, params={'byGuid': guid})
+            response.raise_for_status()
+            entries = response.json().get('entries', [])
+            return entries[0] if entries else None
+    except Exception as e:
+        console.print(f"[red]Failed to fetch metadata for guid '{guid}': {e}")
+        return None
 
 
 def parse_smil_for_media_info(smil_xml):
@@ -261,7 +277,8 @@ def parse_smil_for_media_info(smil_xml):
 
 def get_tracking_info(PLAYBACK_JSON):
     """Retrieves media information including videos and subtitles from the playback JSON."""
-    if class_mediaset_api.is_anonymous:
+    api = get_client()
+    if api.is_anonymous:
         qualities = ("HR", "SD", "SS")
     else:
         qualities = ("HD", "HR", "SD", "SS")
@@ -274,7 +291,7 @@ def get_tracking_info(PLAYBACK_JSON):
 
     params = {
         "format": "SMIL",
-        "auth": class_mediaset_api.getBearerToken(),
+        "auth": api.getBearerToken(),
         "formats": "MPEG-DASH",
         "assetTypes": asset_types,
         "balance": "true",
@@ -301,7 +318,8 @@ def get_tracking_info(PLAYBACK_JSON):
 
 def generate_license_url(tracking_info):
     """Generates the URL to obtain the Widevine license."""
-    account_id = class_mediaset_api.getAccountId()
+    api = get_client()
+    account_id = api.getAccountId()
     if not account_id:
         account_id = tracking_info['tracking_data'].get('aid', '')
 
@@ -309,7 +327,7 @@ def generate_license_url(tracking_info):
         'releasePid': tracking_info['tracking_data'].get('pid'),
         'account': f"http://access.auth.theplatform.com/data/Account/{account_id}",
         'schema': '1.0',
-        'token': class_mediaset_api.getBearerToken(),
+        'token': api.getBearerToken(),
     }
 
     return 'https://widevine.entitlement.theplatform.eu/wv/web/ModularDrm/getRawWidevineLicense', params

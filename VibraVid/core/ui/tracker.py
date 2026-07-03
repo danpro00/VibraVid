@@ -430,6 +430,46 @@ class ContextTracker:
         self.local.episode_name = value
 
     @property
+    def cli_site(self):
+        return getattr(self.local, 'cli_site', None)
+
+    @cli_site.setter
+    def cli_site(self, value):
+        self.local.cli_site = value
+
+    @property
+    def cli_search(self):
+        return getattr(self.local, 'cli_search', None)
+
+    @cli_search.setter
+    def cli_search(self, value):
+        self.local.cli_search = value
+
+    @property
+    def cli_item(self):
+        return getattr(self.local, 'cli_item', None)
+
+    @cli_item.setter
+    def cli_item(self, value):
+        self.local.cli_item = value
+
+    @property
+    def cli_season_selection(self):
+        return getattr(self.local, 'cli_season_selection', None)
+
+    @cli_season_selection.setter
+    def cli_season_selection(self, value):
+        self.local.cli_season_selection = value
+
+    @property
+    def cli_episode_selection(self):
+        return getattr(self.local, 'cli_episode_selection', None)
+
+    @cli_episode_selection.setter
+    def cli_episode_selection(self, value):
+        self.local.cli_episode_selection = value
+
+    @property
     def output_path(self):
         return getattr(self.local, 'output_path', None)
 
@@ -452,6 +492,14 @@ class ContextTracker:
     @max_time.setter
     def max_time(self, value):
         self.local.max_time = value
+
+    @property
+    def site_options(self):
+        return getattr(self.local, 'site_options', None) or {}
+
+    @site_options.setter
+    def site_options(self, value):
+        self.local.site_options = value
 
     @property
     def chapters(self):

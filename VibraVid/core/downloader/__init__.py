@@ -27,7 +27,7 @@ def download(
     cookies: Optional[dict] = None,
     max_segments: Optional[int] = None, max_time: Any = None,
     manifest_content: Optional[str] = None, manifest_refresh_fn: Any = None,
-    other_tracks: Optional[list] = None,
+    other_tracks: Optional[list] = None, chapters: Optional[list] = None,
     **extra: Any,
 ) -> tuple:
     """
@@ -52,7 +52,7 @@ def download(
             for k in ("referer", "label", "max_percentage", "download_id", "site_name")
             if k in extra
         }
-        return MP4_Downloader(url=url, path=path, headers_=headers, key=key, **mp4_extra)
+        return MP4_Downloader(url=url, path=path, headers_=headers, key=key, chapters=chapters, **mp4_extra)
 
     common = dict(
         output_path=output_path,
@@ -64,6 +64,7 @@ def download(
         max_segments=max_segments,
         max_time=max_time,
         other_tracks=other_tracks,
+        chapters=chapters,
         manifest_refresh_fn=manifest_refresh_fn,
     )
     if drm_preference is not None:

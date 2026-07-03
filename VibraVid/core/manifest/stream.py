@@ -138,6 +138,11 @@ class DRMInfo:
     def get_all_drm_types(self) -> List[str]:
         return list(self._drm_types)
 
+    def add_advertised_type(self, drm_type: str) -> None:
+        """Register a DRM system merely *advertised* by the manifest (e.g. HLS ``ALLOWED-CPC``) without an associated PSSH/KID."""
+        if drm_type and drm_type not in self._drm_types:
+            self._drm_types.append(drm_type)
+
     def set_kid(self, kid_hex: str) -> None:
         kid = (kid_hex or "").lower().replace("-", "").strip()
         if not kid:

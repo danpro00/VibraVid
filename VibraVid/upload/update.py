@@ -12,7 +12,7 @@ import importlib.metadata
 from rich.console import Console
 
 from .version import __version__ as source_code_version, __author__, __title__
-from VibraVid.utils import config_manager
+from VibraVid.utils import config_manager, _startup_prefetch
 from VibraVid.utils.http_client import get_headers, create_client
 from VibraVid.setup import get_is_binary_installation
 from VibraVid.setup.binary_paths import binary_paths
@@ -30,6 +30,10 @@ timeout = config_manager.config.get_int("REQUESTS", "timeout")
 
 def fetch_github_releases():
     """Fetch releases data from GitHub API (sync)"""
+    prefetched = _startup_prefetch.collect("releases", timeout=timeout)
+    if prefetched is not None:
+        return prefetched
+
     url = f"https://api.github.com/repos/{__author__}/{__title__}/releases"
     logger.info(f"Checking latest {__title__} release: {url}")
     with create_client(headers=get_headers()) as client:
@@ -141,6 +145,10 @@ def auto_update():
 
 def _fetch_latest_velora_version():
     """Return the latest Velora version from the Velora repo's Cargo.toml, or None."""
+    prefetched = _startup_prefetch.collect("velora_version", timeout=timeout)
+    if prefetched is not None:
+        return prefetched
+
     try:
         url = f"https://raw.githubusercontent.com/{__author__}/Velora/main/Cargo.toml"
         logger.info(f"Checking latest Velora version: {url}")

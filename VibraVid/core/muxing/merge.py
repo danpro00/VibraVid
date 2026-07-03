@@ -319,6 +319,72 @@ def _write_ogm_chapters(chapters: list) -> str:
         return f.name
 
 
+def inject_chapters(file_path: str, chapters: Optional[list] = None):
+    """
+    Injects chapters into an already-muxed file.
+
+    Parameters:
+        - file_path (str): The path to the already-muxed media file.
+        - chapters (list): Queued chapters, e.g. from a downloader's ``.chapters`` attribute. Each entry is ``{"name": str, "seconds": int}``.
+
+    Returns:
+        tuple: (file_path, result_json)
+    """
+    if not chapters:
+        return file_path, {}
+
+    chapters = sorted(chapters, key=lambda c: c["seconds"])
+    if chapters[0]["seconds"] > 0:
+        chapters = [{"name": "Intro", "seconds": 0}] + chapters
+
+    logger.info(f"Injecting {len(chapters)} chapter(s) as final mux step")
+
+    base, ext = os.path.splitext(file_path)
+    tmp_out = f"{base}_chapters{ext}"
+
+    if MUX_ENGINE == "mkvmerge" or ext.lower() == ".mkv":
+        chapter_file = _write_ogm_chapters(chapters)
+        cmd = [get_mkvmerge_path(), "-o", tmp_out, "--chapters", chapter_file, file_path]
+        logger.info(f"Running chapter injection (mkvmerge) command: {' '.join(cmd)}")
+        total_duration = get_video_duration(file_path)
+        result_json = capture_ffmpeg_real_time(cmd, '[yellow]MKVMERGE [cyan]Add chapters', total_duration)
+    else:
+        chapter_file = _write_ffmetadata_chapters(chapters)
+        ffmpeg_cmd = [get_ffmpeg_path()]
+        if is_mpegts_file(file_path):
+            ffmpeg_cmd += ["-f", "mpegts"]
+
+        ffmpeg_cmd += [
+            "-i", file_path,
+            "-f", "ffmetadata", "-i", chapter_file,
+            "-map", "0", "-map_metadata", "1", "-c", "copy",
+            tmp_out, "-y",
+        ]
+        
+        logger.info(f"Running chapter injection (ffmpeg) command: {' '.join(ffmpeg_cmd)}")
+        total_duration = get_video_duration(file_path)
+        result_json = capture_ffmpeg_real_time(ffmpeg_cmd, '[yellow]FFMPEG [cyan]Add chapters', total_duration)
+        if context_tracker.should_print:
+            print()
+
+    try:
+        os.unlink(chapter_file)
+    except OSError:
+        pass
+
+    if not (os.path.exists(tmp_out) and os.path.getsize(tmp_out) > 0):
+        logger.warning("[inject_chapters] chapter injection failed, keeping file without chapters")
+        return file_path, result_json
+
+    try:
+        os.replace(tmp_out, file_path)
+    except OSError as e:
+        logger.warning(f"[inject_chapters] could not replace original file: {e}")
+        return tmp_out, result_json
+
+    return file_path, result_json
+
+
 def join_video(video_path: str, out_path: str):
     """
     Mux video file using FFmpeg.
@@ -353,14 +419,8 @@ def join_video(video_path: str, out_path: str):
         ffmpeg_cmd.extend(['-f', 'mpegts'])
 
     ffmpeg_cmd.extend(['-i', video_path])
-    chapter_file = None
-    if context_tracker.chapters:
-        chapter_file = _write_ffmetadata_chapters(context_tracker.chapters)
-        ffmpeg_cmd.extend(['-f', 'ffmetadata', '-i', chapter_file])
     add_encoding_params(ffmpeg_cmd)
-    
-    if chapter_file:
-        ffmpeg_cmd.extend(['-map_metadata', '1'])
+
     ffmpeg_cmd.extend(_build_global_metadata_flags())
     ffmpeg_cmd.extend([out_path, '-y'])
 
@@ -369,12 +429,6 @@ def join_video(video_path: str, out_path: str):
     result_json = capture_ffmpeg_real_time(ffmpeg_cmd, '[yellow]FFMPEG [cyan]Join video', total_duration)
     if context_tracker.should_print:
         print()
-
-    if chapter_file:
-        try:
-            os.unlink(chapter_file)
-        except OSError:
-            pass
 
     return out_path, result_json
 
@@ -389,11 +443,6 @@ def _join_video_mkvmerge(video_path: str, out_path: str):
     if title:
         cmd += ["--title", title]
 
-    chapter_file = None
-    if context_tracker.chapters:
-        chapter_file = _write_ogm_chapters(context_tracker.chapters)
-        cmd += ["--chapters", chapter_file]
-
     cmd += [
         "--no-audio",
         "--no-subtitles",
@@ -404,12 +453,6 @@ def _join_video_mkvmerge(video_path: str, out_path: str):
     logger.info(f"Running Join Video (mkvmerge) command: {' '.join(cmd)}")
     total_duration = get_video_duration(video_path)
     result_json = capture_ffmpeg_real_time(cmd, '[yellow]MKVMERGE [cyan]Join video', total_duration)
-    
-    if chapter_file:
-        try:
-            os.unlink(chapter_file)
-        except OSError:
-            pass
 
     return out_path, result_json
 

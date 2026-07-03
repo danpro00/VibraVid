@@ -1162,17 +1162,22 @@ class MediaDownloader(LiveDownloadMixin, BaseMediaDownloader):
                             except Exception:
                                 pass
                 else:
-                    logger.warning(f"Post-merge decryption failed for {out_path.name}")
+                    kid_hint = ", ".join(stream.drm.get_all_kids()) if stream.drm else ""
+                    track_label = f"{stream.type} {stream.resolution or stream.language or ''}".strip()
+                    console.print(f"[bold red][!] WARNING[/bold red] Decryption failed for [yellow]{track_label}[/yellow] (required KID(s): [magenta]{kid_hint}[/magenta]" if kid_hint else "")
+                    logger.warning(f"Post-merge decryption failed for {out_path.name} (kid={kid_hint or 'unknown'})")
                     if post_merge_path.exists():
                         try:
                             post_merge_path.unlink()
                         except Exception:
                             pass
+            
             except Exception as exc:
                 logger.error(f"Post-merge decryption error: {exc}")
 
         if out_path.exists() and out_path.stat().st_size > 0:
             logger.debug(f"{protocol.upper()} merged {len(paths):>4} segs -> {out_path.name} ({out_path.stat().st_size // 1024} KB)")
+            
             if decrypted_ok:
                 # Finalize the bar at 100%, keeping segment/size/status as-is.
                 bar_manager.handle_progress_line({"task_key": task_key, "pct": 100})

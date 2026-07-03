@@ -25,11 +25,13 @@ from VibraVid.upload.version import __version__, __title__
 
 from VibraVid.cli.command.global_search import global_search as call_global_search
 from VibraVid.cli.command.download import handle_direct_download
+from VibraVid.cli.command.equivalent_command import EquivalentCommandBuilder
 
 
 console = Console()
 msg = Prompt()
 logger = logging.getLogger(__name__)
+
 COLOR_MAP = {
     "anime": "red", 
     "film_serie": "yellow", 
@@ -42,6 +44,7 @@ CATEGORY_MAP = {
     3: "serie", 
     5: "song"
 }
+
 CLOSE_CONSOLE = config_manager.config.get_bool('DEFAULT', 'close_console')
 PERSISTENT_ARGS = {
     'use_proxy', 
@@ -59,6 +62,13 @@ _VERSION_FLAGS = {
     "Bento4 (mp4dump)": [],
 }
 
+_EQUIVALENT_CMD_EXCLUDED_DESTS = {
+    'site', 'search', 'item', 'season', 'episode',
+    'down', 'stream_type', 'output', 'headers', 'license_url', 'license_headers', 'key',
+    'no_log', 'update', 'dep',
+}
+equivalent_command_builder = EquivalentCommandBuilder(excluded_dests=_EQUIVALENT_CMD_EXCLUDED_DESTS)
+
 
 def run_function(func: Callable[..., None], search_terms: str = None, selections: dict = None) -> None:
     """Run function once or indefinitely based on close_console flag."""
@@ -74,7 +84,55 @@ def force_exit():
     sys.exit(0)
 
 
-def setup_argument_parser(search_functions):
+def _prescan_site_arg(argv):
+    """Scan raw argv for --site's value before argparse runs."""
+    for i, tok in enumerate(argv):
+        if tok == '--site' and i + 1 < len(argv):
+            return argv[i + 1]
+        if tok.startswith('--site='):
+            return tok.split('=', 1)[1]
+    
+    return None
+
+
+def _resolve_site_module(site_value, search_functions):
+    """Resolve a --site value (name or index) to its loaded module, or None if no match."""
+    if not site_value:
+        return None
+
+    key = site_value.strip().lower()
+    for func in search_functions.values():
+        if key == str(func.indice) or key == func.module_name.lower():
+            try:
+                return func.get_module()
+            except Exception:
+                logger.debug(f"Could not eagerly load site module for '{site_value}' while building CLI options", exc_info=True)
+                return None
+    
+    return None
+
+
+def _has_help_flag(argv):
+    """Whether -h/--help was passed (checked before argparse runs, to branch help display)."""
+    return any(tok in ('-h', '--help') for tok in argv)
+
+
+def _print_site_only_help(site_value, site_module):
+    """Print ONLY this site's own CLI options (skips the generic parser dump entirely) and exit."""
+    register = getattr(site_module, 'register_cli_args', None)
+    site_name = getattr(site_module, '__name__', str(site_module)).rsplit('.', 1)[-1]
+    mini_parser = argparse.ArgumentParser(
+        prog=f'manual.py --site {site_value} ...',
+        description=f'Site-specific options for "{site_name}" (--site {site_value})',
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    register(mini_parser)
+    mini_parser.print_help()
+    raise SystemExit(0)
+
+
+def setup_argument_parser(search_functions, site_module=None, extra_site_modules=None):
     """Setup and return configured argument parser."""
     module_info = {}
     for func in search_functions.values():
@@ -96,6 +154,7 @@ def setup_argument_parser(search_functions):
     search_group.add_argument('--global', dest='global_search', action='store_true', help='Search across all sites')
     search_group.add_argument('--category', type=int, metavar='N', help='Category filter for global search\n  1=Anime  2=Movies/Series  3=Series  4=Movies')
     search_group.add_argument('--auto-first', action='store_true', help='Auto-select first result (requires --site and --search)')
+    search_group.add_argument('--item', type=int, default=None, metavar='N', help='Select the Nth search result directly, 0-based (requires --site and --search)')
     search_group.add_argument('--year', type=str, metavar='RANGE', help='Year filter, e.g. "2020" or "1990-2015"')
 
     # ── Series navigation
@@ -119,6 +178,7 @@ def setup_argument_parser(search_functions):
     # ── Direct download
     dl_group = parser.add_argument_group('Direct download (--down)')
     dl_group.add_argument('--down', metavar='URL', help='Stream URL to download directly (MP4 / HLS / DASH / ISM)')
+    dl_group.add_argument('--type', dest='stream_type', choices=['auto', 'mp4', 'hls', 'dash', 'ism'], default='auto', help='Force the stream type instead of auto-detecting (default: auto)')
     dl_group.add_argument('-o', '--output', metavar='PATH', help='Output file path (extension auto-appended if omitted)')
     dl_group.add_argument('--headers', action='append', metavar='Key:Value', help='HTTP header. Repeatable.')
     dl_group.add_argument('--license-url', dest='license_url', metavar='URL', help='DRM license server URL (Widevine / PlayReady)')
@@ -135,8 +195,37 @@ def setup_argument_parser(search_functions):
     util_group.add_argument('--dep', action='store_true', help='Show dependency paths (config, services, binaries)')
     util_group.add_argument('--version', action='version', version=f'{__title__} {__version__}')
 
+    # ── Site-specific options (only added, and thus only shown in --help, when --site targets this module).
+    site_option_dests = []
+    register = getattr(site_module, 'register_cli_args', None) if site_module else None
+    if callable(register):
+        try:
+            site_option_dests = list(register(parser) or [])
+        except Exception:
+            logger.warning(f"register_cli_args() failed for site module '{getattr(site_module, '__name__', site_module)}'", exc_info=True)
+
+    extra_help_sections = []
+    for extra_module in extra_site_modules or []:
+        if extra_module is site_module:
+            continue
+
+        extra_register = getattr(extra_module, 'register_cli_args', None)
+        if callable(extra_register):
+            try:
+                mini_parser = argparse.ArgumentParser(add_help=False, formatter_class=argparse.RawTextHelpFormatter, prog='')
+                extra_register(mini_parser)
+                if any(g._group_actions for g in mini_parser._action_groups):
+                    _, _, section = mini_parser.format_help().partition('\n\n')
+                    if section:
+                        extra_help_sections.append(section.rstrip('\n'))
+            except Exception:
+                logger.warning(f"register_cli_args() failed for site module '{getattr(extra_module, '__name__', extra_module)}'", exc_info=True)
+
+    if extra_help_sections:
+        parser.epilog = "\n\n".join(extra_help_sections) + "\n\n" + parser.epilog
+
     logger.debug("Argument parser set up with available sites and options.")
-    return parser
+    return parser, site_option_dests
 
 
 def apply_config_updates(args):
@@ -205,18 +294,34 @@ def handle_direct_site_selection(args, input_to_function, module_name_to_functio
         logger.warning(f"User provided unknown site: '{args.site}'")
         return False
 
-    # Handle auto-first option
-    if args.auto_first and search_terms:
-        database = func_to_run(search_terms, get_onlyDatabase=True)
-        if database and hasattr(database, 'media_list') and database.media_list:
-            logger.info("Auto-first enabled: executing first search result directly.")
-            first_item = database.media_list[0]
-            item_dict = first_item.__dict__.copy() if hasattr(first_item, '__dict__') else {}
-            func_to_run(direct_item=item_dict, selections=selections)
-            return True
+    context_tracker.cli_site = args.site
+
+    # Handle auto-first / --item (direct result selection by index, 0 for auto-first)
+    requested_index = 0 if args.auto_first else args.item
+    if requested_index is not None and search_terms:
+        try:
+            database = func_to_run(search_terms, get_onlyDatabase=True, selections=selections)
+        except Exception as e:
+            console.print(f"[yellow]Direct item search failed ({e}). Falling back to interactive mode.")
+            logger.warning(f"Direct item search raised an exception, falling back to interactive mode: {e}")
+            database = None
+
+        media_list = getattr(database, 'media_list', None) if database else None
+        if media_list:
+            if 0 <= requested_index < len(media_list):
+                logger.info(f"Direct item selection: executing result at index {requested_index} directly.")
+                context_tracker.cli_search = search_terms
+                context_tracker.cli_item = requested_index
+                item = media_list[requested_index]
+                item_dict = item.__dict__.copy() if hasattr(item, '__dict__') else {}
+                func_to_run(direct_item=item_dict, selections=selections)
+                return True
+            else:
+                console.print(f"[red]--item {requested_index} is out of range (found {len(media_list)} results). Falling back to interactive mode.")
+                logger.warning(f"--item {requested_index} out of range for {len(media_list)} results.")
         else:
             console.print("[yellow]No results found. Falling back to interactive mode.")
-            logger.info("Auto-first enabled but no results found for search terms.")
+            logger.info("Direct item selection enabled but no results found for search terms.")
 
     run_function(func_to_run, search_terms=search_terms, selections=selections)
     return True
@@ -331,8 +436,30 @@ def show_dependencies(search_functions):
 
 def main():
     try:
+        argv = sys.argv[1:]
         search_functions = load_search_functions()
-        parser = setup_argument_parser(search_functions)
+        prescanned_site = _prescan_site_arg(argv)
+        help_requested = _has_help_flag(argv)
+        site_module = _resolve_site_module(prescanned_site, search_functions) if prescanned_site else None
+
+        # `--site X --help`: show ONLY that site's own options, skip the generic dump entirely.
+        if help_requested and site_module is not None and callable(getattr(site_module, 'register_cli_args', None)):
+            _print_site_only_help(prescanned_site, site_module)
+
+        # Plain `--help` (no --site, or a site with nothing site-specific to show): the usual
+        # generic parser, plus every other site's options aggregated so they're discoverable.
+        extra_site_modules = None
+        if help_requested and site_module is None:
+            extra_site_modules = []
+            for func in search_functions.values():
+                if not func.has_cli_args:
+                    continue
+                try:
+                    extra_site_modules.append(func.get_module())
+                except Exception:
+                    logger.debug(f"Could not load site module '{func.module_name}' to list its CLI options for --help", exc_info=True)
+
+        parser, site_option_dests = setup_argument_parser(search_functions, site_module=site_module, extra_site_modules=extra_site_modules)
         args = parser.parse_args()
         setup_logger(no_log=getattr(args, 'no_log', False))
 
@@ -385,6 +512,9 @@ def main():
         # Propagate CLI download limits to the service flow
         context_tracker.max_segments = getattr(args, 'max_segments', None)
         context_tracker.max_time = getattr(args, 'max_time', None)
+        site_options = {'drm': getattr(args, 'drm', None)}
+        site_options.update({dest: getattr(args, dest, None) for dest in site_option_dests})
+        context_tracker.site_options = site_options
 
         # ── Direct download (--down) — handled before interactive site selection ──
         if handle_direct_download(args):
@@ -415,6 +545,7 @@ def main():
 
         input_to_function, choice_labels, module_name_to_function = build_function_mappings(search_functions)
         if handle_direct_site_selection(args, input_to_function, module_name_to_function, args.search, selections):
+            equivalent_command_builder.log_equivalent_command(args, parser, context_tracker, site_option_dests)
             return
 
         if not close_console_flag:
@@ -427,7 +558,9 @@ def main():
 
                 if category in input_to_function:
                     logger.info(f"User selected site '{category}' from interactive menu.")
+                    context_tracker.cli_site = category
                     run_function(input_to_function[category], search_terms=args.search, selections=selections)
+                    equivalent_command_builder.log_equivalent_command(args, parser, context_tracker, site_option_dests)
 
                 user_response = msg.ask("\n[cyan]Do you want to perform another search? (y/n)", choices=["y", "n"], default="n")
                 if user_response.lower() != 'y':
@@ -442,7 +575,9 @@ def main():
                 call_global_search(args.search)
 
             if category in input_to_function:
+                context_tracker.cli_site = category
                 run_function(input_to_function[category], search_terms=args.search, selections=selections)
+                equivalent_command_builder.log_equivalent_command(args, parser, context_tracker, site_option_dests)
 
             force_exit()
 

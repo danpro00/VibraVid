@@ -16,9 +16,10 @@ from rich.console import Console
 
 from VibraVid.utils import config_manager, os_manager
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
-from VibraVid.core.muxing import join_video, join_audios, join_subtitles, build_hybrid_output, probe_media_file
+from VibraVid.core.muxing import join_video, join_audios, join_subtitles, inject_chapters, build_hybrid_output, probe_media_file
 from VibraVid.core.muxing.helper.video import get_media_metadata
 from VibraVid.core.muxing.helper.audio import audio_ext_for_codec
+from VibraVid.utils.vault_upload.hook import upload_after
 from VibraVid.setup import get_ffmpeg_path
 
 from VibraVid.core.velora._verify_decrypt import verify_decrypted_media
@@ -351,7 +352,7 @@ class BaseDownloader:
                 self.last_merge_result = {"hybrid": True, "output": hybrid_file}
                 # hybrid_file include già audio e subtitle via mkvmerge:
                 # non chiamare join_audios/join_subtitles separatamente
-                return hybrid_file
+                return self._inject_chapters(hybrid_file)
 
 
         if not audio_tracks and not subtitle_tracks:
@@ -360,7 +361,9 @@ class BaseDownloader:
                 out_path=self.output_path,
             )
             self.last_merge_result = result_json
-            return merged_file if self._merge_output_ok(merged_file) else None
+            if not self._merge_output_ok(merged_file):
+                return None
+            return self._inject_chapters(merged_file)
 
         current_file = video_path
 
@@ -379,7 +382,14 @@ class BaseDownloader:
             else:
                 self._track_subtitles_for_copy(subtitle_tracks)
 
-        return current_file
+        return self._inject_chapters(current_file)
+
+    def _inject_chapters(self, file_path: str) -> str:
+        """Add this downloader's queued chapters (self.chapters) as the final muxing step."""
+        merged_file, result_json = inject_chapters(file_path, getattr(self, "chapters", None))
+        if result_json:
+            self.last_merge_result = result_json
+        return merged_file
 
     @staticmethod
     def _merge_output_ok(path: str) -> bool:
@@ -625,4 +635,5 @@ class BaseDownloader:
         if CLEANUP_TMP:
             shutil.rmtree(self.output_dir, ignore_errors=True)
 
+        upload_after(self.output_path)
         execute_hooks("post_run")

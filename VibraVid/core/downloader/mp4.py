@@ -16,13 +16,15 @@ from rich.progress import Progress, TextColumn
 from VibraVid.utils.http_client import create_client, get_userAgent
 from VibraVid.utils import config_manager, os_manager, internet_manager
 from VibraVid.utils.hooks import execute_hooks
+from VibraVid.utils.vault_upload.hook import try_fetch
 from VibraVid.core.muxing.helper.video import get_media_metadata
+from VibraVid.core.muxing import inject_chapters
 from VibraVid.core.ui.progress_bar import CustomBarColumn
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
 
 from ._interrupt import InterruptHandler
-from ._drm_probe import DRMProbe
+from ._drm_probe import DRMProbe, PROBE_BYTES
 from ._post_decrypt import PostDownloadDecryptor
 from ._supa_tracker import SupaTracker
 
@@ -39,7 +41,7 @@ class MP4FileDownloader:
     _decryptor = PostDownloadDecryptor()
     _tracker = SupaTracker()
 
-    def __init__(self,url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None) -> None:
+    def __init__(self,url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None) -> None:
         self.url = str(url).strip()
         self.path = os_manager.get_sanitize_path(path)
         self.referer = referer
@@ -47,6 +49,7 @@ class MP4FileDownloader:
         self.label = label
         self.key = key
         self.max_percentage = self._normalize_max_percentage(max_percentage)
+        self.chapters = chapters if chapters is not None else context_tracker.chapters
 
         # Merge explicit args with context-level defaults
         self.download_id = download_id or context_tracker.download_id
@@ -59,6 +62,10 @@ class MP4FileDownloader:
         self._total: Optional[int] = None
         self._downloaded: int = 0
         self._incomplete_err: Any = False
+
+        # In-flight DRM probe state
+        self._probe_buf: bytearray = bytearray()
+        self._probe_done: bool = False
 
     @staticmethod
     def _normalize_max_percentage(value: Optional[float]) -> float:
@@ -82,7 +89,10 @@ class MP4FileDownloader:
 
         self._start_gui_tracking()
         headers = self._build_headers()
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        out_dir = os.path.dirname(self.path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        
         self._install_signal_handler()
 
         client = create_client(headers=headers)
@@ -90,7 +100,6 @@ class MP4FileDownloader:
             if not self._check_content_type(client, headers):
                 return None, False, None
 
-            self._run_drm_probe(client, headers)
             self._stream_to_disk(client, headers)
 
         finally:
@@ -135,6 +144,16 @@ class MP4FileDownloader:
             headers.update(self.headers_)
         else:
             headers["User-Agent"] = get_userAgent()
+
+        # Drop any inbound Range header: it usually survives from copied browser
+        # requests (a seek) and would silently truncate the file — we always want
+        # the full asset and manage ranges ourselves (probe).
+        stripped = [k for k in headers if k.lower() == "range"]
+        for k in stripped:
+            headers.pop(k, None)
+        if stripped:
+            logger.warning(f"Ignoring inbound Range header ({', '.join(stripped)}) — downloading full file.")
+
         return headers
 
     def _install_signal_handler(self) -> None:
@@ -167,12 +186,34 @@ class MP4FileDownloader:
 
         return False
 
-    def _run_drm_probe(self, client, headers: dict) -> None:
-        logger.info("Probing first 4 MB for DRM/encryption markers")
-        if self.download_id:
-            download_tracker.update_status(self.download_id, "Probing ...")
+    def _feed_probe(self, chunk: bytes) -> None:
+        """Accumulate the first ~4 MB of the *live* download and inspect them in-flight
+        (no second request). Runs the DRM check exactly once, then releases the buffer."""
+        if self._probe_done or not chunk:
+            return
 
-        encrypted, scheme, drm_names = self._probe.probe(self.url, headers, client)
+        self._probe_buf += chunk
+        if len(self._probe_buf) >= PROBE_BYTES:
+            self._finish_probe()
+
+    def _finish_probe(self) -> None:
+        if self._probe_done:
+            return
+        self._probe_done = True
+
+        raw = bytes(self._probe_buf[:PROBE_BYTES])
+        self._probe_buf = bytearray()  # release memory regardless of outcome
+        if not raw:
+            return
+
+        try:
+            self._evaluate_probe(raw)
+        except Exception as exc:
+            logger.debug(f"In-flight DRM probe failed (non-fatal): {exc}")
+
+    def _evaluate_probe(self, raw: bytes) -> None:
+        logger.info("Probing first 4 MB for DRM/encryption markers (in-flight)")
+        encrypted, scheme, drm_names = self._probe.inspect(raw)
 
         if encrypted:
             if not PostDownloadDecryptor.has_keys(self.key):
@@ -183,9 +224,6 @@ class MP4FileDownloader:
         else:
             logger.info("Probe: no encryption markers found — clear stream.")
 
-        if self.download_id:
-            download_tracker.update_status(self.download_id, "Downloading ...")
-
     def _stream_to_disk(self, client, headers: dict) -> None:
         response = client.get(self.url, stream=True)
         try:
@@ -193,6 +231,8 @@ class MP4FileDownloader:
             self._total = self._parse_content_length(response)
             self._downloaded = 0
             self._incomplete_err = False
+            self._probe_buf = bytearray()
+            self._probe_done = False
 
             if self._total is None:
                 logger.error("No Content-Length — streaming until connection closes.")
@@ -276,6 +316,7 @@ class MP4FileDownloader:
 
                 if chunk:
                     self._downloaded += fh.write(chunk)
+                    self._feed_probe(chunk)
                     self._tick_progress(progress_bars, start_time, bar_mgr)
 
                     if self._should_stop_at_max_percentage():
@@ -293,6 +334,8 @@ class MP4FileDownloader:
             console.print(f"\n[red]Download error: {exc}. Saving partial download.")
 
         finally:
+            if not self._probe_done:
+                self._finish_probe()
             try:
                 fh.flush()
                 os.fsync(fh.fileno())
@@ -387,6 +430,10 @@ class MP4FileDownloader:
         if PostDownloadDecryptor.has_keys(self.key):
             self._decryptor.run(self.path, self.key, self.download_id)
 
+        # Chapters, as the final muxing step (mirrors BaseDownloader._inject_chapters).
+        if self.chapters:
+            self.path, _ = inject_chapters(self.path, self.chapters)
+
         # Resolve media tokens (quality/codec/language) by probing the finished file.
         self._resolve_media_tokens()
 
@@ -478,8 +525,12 @@ class MP4FileDownloader:
         return False
 
 
-def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None) -> tuple:
-    return MP4FileDownloader(
+def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None) -> tuple:
+    """Backward-compatible entry point — wraps ``MP4FileDownloader.download()``."""
+    if try_fetch(path):
+        return path, False, None
+
+    result = MP4FileDownloader(
         url=url,
         path=path,
         referer=referer,
@@ -489,4 +540,11 @@ def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_:
         label=label,
         key=key,
         max_percentage=max_percentage,
+        chapters=chapters,
     ).download()
+
+    if isinstance(result, tuple) and len(result) >= 3 and result[0] and not result[1] and not result[2]:
+        from VibraVid.utils.vault_upload.hook import upload_after
+        upload_after(result[0])
+
+    return result

@@ -39,6 +39,17 @@ def _run_command(cmd: List[str], description: str) -> bool:
     return True
 
 
+def _rpu_profile(dovi_tool: str, rpu_file: Path) -> Optional[int]:
+    """Return the Dolby Vision profile of an extracted RPU (via ``dovi_tool info``), or None."""
+    try:
+        result = subprocess.run([dovi_tool, "info", "-i", str(rpu_file), "-s"], capture_output=True, text=True, check=False)
+        m = re.search(r"Profile:\s*(\d+)", result.stdout or "")
+        return int(m.group(1)) if m else None
+    except Exception as exc:
+        logger.warning(f"Could not determine RPU profile: {exc}")
+        return None
+
+
 def _run_progress_command(cmd: List[str], label: str, input_path: Path, output_path: Path, accept_warnings: bool = False) -> bool:
     result = run_with_progress(cmd, label, str(input_path), str(output_path))
     if isinstance(result, tuple):
@@ -165,7 +176,7 @@ def _to_annexb_hdr10(input_path: Path, output_path: Path) -> bool:
         str(output_path),
     ]
     print("")
-    return _ffmpeg_annexb(cmd, input_path, "[yellow]FFMPEG [cyan]Conv HDR10")
+    return _ffmpeg_annexb(cmd, input_path, "[yellow]FFMPEG [cyan]Conv HDR10 \\[BT.2020 PQ]")
 
 
 def _dv_mp4_to_annexb(input_path: Path, output_path: Path) -> bool:
@@ -319,7 +330,17 @@ def build_hybrid_output(video_track: Dict[str, Any], other_videos: Iterable[Dict
     if not _run_command([dovi_tool, "extract-rpu", str(dv_hevc), "-o", str(rpu_file)], "dovi_tool extract-rpu"):
         return None
 
-    dovi_label = f"[cyan]Proc[/cyan] [green]{base_hevc.name}[/green] - [yellow]DoviTool[/yellow]"
+    # The RPU must match the HDR10 base to make a valid cross-compatible file.
+    src_profile = _rpu_profile(dovi_tool, rpu_file)
+    convert_mode = {5: "3", 7: "2"}.get(src_profile) if src_profile is not None else None
+    dv_profile_label = f"DV {src_profile}" if src_profile is not None else "DV"
+    if convert_mode:
+        logger.info(f"Hybrid: DV source is profile {src_profile}; converting RPU to 8.1 (dovi_tool -m {convert_mode})")
+        if not _run_command([dovi_tool, "-m", convert_mode, "extract-rpu", str(dv_hevc), "-o", str(rpu_file)], "dovi_tool extract-rpu (convert to 8.1)"):
+            return None
+        dv_profile_label = "DV 8.1"
+
+    dovi_label = f"[cyan]Proc[/cyan] [green]{base_hevc.name}[/green] - [yellow]DoviTool[/yellow] \\[{dv_profile_label}]"
     if not _run_progress_command(
         [
             dovi_tool, "inject-rpu", "-i", str(base_hevc),

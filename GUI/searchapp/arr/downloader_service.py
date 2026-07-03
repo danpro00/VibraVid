@@ -159,7 +159,7 @@ class ArrDownloaderService:
                     try:
                         self.sonarr.command_rescan_series(serie["id"])
                         time.sleep(1)
-                        self.sonarr.command_downloaded_episodes_scan(self._translate_path(target_folder))
+                        self.sonarr.command_downloaded_episodes_scan(self._translate_path(series_root))
                         logger.info(f"Rescan/import scan completed for S{season_num}E{ep_num}")
                     except Exception as scan_exc:
                         logger.warning(f"Rescan failed: {scan_exc}")

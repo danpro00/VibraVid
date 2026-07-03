@@ -30,7 +30,8 @@ class MockStream:
     
     # Flags
     default: bool = False
-    
+    playlist_url: str = "mock://playlist"
+
     # Runtime state (not persisted)
     selected: bool = field(default=False, repr=False)
     
