@@ -14,7 +14,7 @@ from VibraVid.setup import get_wvd_path, get_prd_path
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.utils.media_players import MediaPlayers
 
-from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_time
+from VibraVid.core.velora.util.formatting import parse_max_time as _parse_max_time
 from VibraVid.core.velora.downloader import MediaDownloader
 
 from VibraVid.core.drm.manager import DRMManager

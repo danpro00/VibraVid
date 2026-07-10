@@ -9,6 +9,7 @@ from .console import start_message
 from .console import TVShowManager
 from .os import os_manager, internet_manager
 from .logger import setup_logger, logger, get_log_file_path
+from ._mp4dump import mp4dump, dump_to_string
 
 
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     "setup_logger",
     "logger",
     "get_log_file_path",
+    "mp4dump",
+    "dump_to_string"
 ]

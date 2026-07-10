@@ -22,9 +22,7 @@ RUN BENTO4_VERSION="1-6-0-641" && \
     unzip -q /tmp/bento4.zip -d /tmp/bento4 && \
     mkdir -p /home/appuser/.local/bin/binary && \
     cp /tmp/bento4/${BENTO4_DIR}/bin/mp4decrypt /home/appuser/.local/bin/binary/mp4decrypt && \
-    cp /tmp/bento4/${BENTO4_DIR}/bin/mp4dump    /home/appuser/.local/bin/binary/mp4dump && \
-    chmod 755 /home/appuser/.local/bin/binary/mp4decrypt \
-              /home/appuser/.local/bin/binary/mp4dump && \
+    chmod 755 /home/appuser/.local/bin/binary/mp4decrypt && \
     rm -rf /tmp/bento4 /tmp/bento4.zip
 
 # Shaka Packager — official prebuilt release (x86_64 Linux)

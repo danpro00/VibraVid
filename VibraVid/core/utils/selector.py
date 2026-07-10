@@ -216,11 +216,11 @@ class SelectionResult:
     """
     What StreamSelector found after progressive fallback.
 
-    matched_res       Normalised HEIGHT string (not width). "1920" input on a 1920×1080 stream → matched_res="1080".
+    matched_res       Normalised HEIGHT string (not width). "1920" input on a 1920×1080 stream -> matched_res="1080".
     matched_langs     Pipe-separated ACTUAL stream language tags, e.g. "it-IT|en-US".
     matched_codec     Downloader codec token, e.g. "hvc1".
     matched_ids       Pipe-separated real manifest IDs (synthetic vid: excluded).
-    extra             Passthrough key-values for the formatter (bwMin, bwMax, …).
+    extra             Passthrough key-values for the formatter (bwMin, bwMax, ...).
     """
     streams: list = field(default_factory=list)
 
@@ -242,10 +242,10 @@ class BaseFormatter(ABC):
         Return the CLI filter string for this track.
 
         Return values with special meaning (recognised by wrappers):
-          "false"  → drop / skip this track type
-          "all"    → pass all tracks of this type
-          "best"   → select the single best stream
-          "worst"  → select the single worst stream
+          "false"  -> drop / skip this track type
+          "all"    -> pass all tracks of this type
+          "best"   -> select the single best stream
+          "worst"  -> select the single worst stream
         """
 
 
@@ -254,7 +254,7 @@ class StreamSelectorFormatter(BaseFormatter):
 
     @staticmethod
     def _dedup_real_ids(matched_ids: Optional[str]) -> Optional[str]:
-        """Strip synthetic 'vid:…' IDs and deduplicate."""
+        """Strip synthetic 'vid:...' IDs and deduplicate."""
         if not matched_ids:
             return None
         seen: set = set()
@@ -312,8 +312,8 @@ class StreamSelectorFormatter(BaseFormatter):
         Multiple selected streams.
 
         Audio (multi-lang):
-          • Has real IDs  → id='\bA\b|\bB\b'  (no for=, downloader picks all matching)
-          • No real IDs   → lang='ita|it':codecs=...:for=allN
+          • Has real IDs  -> id='\bA\b|\bB\b'  (no for=, downloader picks all matching)
+          • No real IDs   -> lang='ita|it':codecs=...:for=allN
         """
         parts: List[str] = []
 
@@ -439,8 +439,8 @@ def _matches_lang(s, langs: str) -> bool:
     Supports:
     - pipe-separated tokens:  "ita|it"
     - space-separated tokens: "ita it"  (treated identically)
-    - ISO 639-2 three-letter codes (eng, ita, fra …) matched against
-      ISO 639-1 + region tags (en-US, it-IT, fr-FR …) by trying the
+    - ISO 639-2 three-letter codes (eng, ita, fra ...) matched against
+      ISO 639-1 + region tags (en-US, it-IT, fr-FR ...) by trying the
       two-letter prefix.
     """
     tokens = [t.strip().lower() for t in re.split(r'[|\s]+', langs) if t.strip()]
@@ -615,7 +615,7 @@ class StreamSelector:
         sa = self._formatter.format(ra)
         ss = self._formatter.format(rs)
 
-        logger.info(f"StreamSelector args → video={sv!r}  audio={sa!r}  subtitle={ss!r}")
+        logger.info(f"StreamSelector args -> video={sv!r}  audio={sa!r}  subtitle={ss!r}")
         return sv, sa, ss
 
     def _apply_default_filter(self, selected: list, spec: FilterSpec) -> list:
@@ -627,7 +627,7 @@ class StreamSelector:
         
         filtered = [s for s in selected if bool(getattr(s, "default", False)) == spec.select_default]
         if filtered:
-            logger.info(f"StreamSelector: applied default filter (select_default={spec.select_default}) → {len(filtered)}/{len(selected)} streams")
+            logger.info(f"StreamSelector: applied default filter (select_default={spec.select_default}) -> {len(filtered)}/{len(selected)} streams")
             return filtered
         logger.info(f"StreamSelector: default filter (select_default={spec.select_default}) resulted in 0 streams, keeping original {len(selected)}")
         return selected

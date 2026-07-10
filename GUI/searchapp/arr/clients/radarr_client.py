@@ -1,6 +1,7 @@
 # 07.05.26
 
 import logging
+import time
 import requests
 from itertools import count
 from typing import Any, Dict, List, Optional
@@ -106,6 +107,15 @@ class RadarrClient:
         """Get a single movie by ID."""
         return self._get(f"/movie/{movie_id}").json()
 
+    def movie_exists(self, movie_id: int) -> bool:
+        """Return True if the movie is still present in Radarr."""
+        try:
+            resp = requests.get(f"{self._base}/movie/{movie_id}", headers=self._headers, timeout=self.timeout)
+            return resp.ok
+        except Exception as exc:
+            logger.debug(f"Radarr movie {movie_id} existence check failed: {exc}")
+            return False
+
     def update_movie_path(self, movie_id: int, new_path: str) -> bool:
         """Update the root path of a movie so Radarr expects files there."""
         try:
@@ -162,21 +172,18 @@ class RadarrClient:
 
     # ── commands ─────────────────────────────────────────
 
-    def command_downloaded_movies_scan(self, path: str) -> Dict[str, Any]:
-        """Tell Radarr to scan a folder for newly downloaded movies."""
-        return self._post("/command", json_data={
-            "name": "DownloadedMoviesScan",
-            "path": path,
-            "importMode": "Auto",
-        }).json()
-
     def command_rescan_movie(self, movie_id: int) -> Dict[str, Any]:
         return self._post("/command", json_data={
             "name": "RescanMovie",
             "movieId": movie_id,
         }).json()
 
-    # ── manual import ─────────────────────────────────
+    def command_rename_movie(self, movie_id: int) -> Dict[str, Any]:
+        """Ask Radarr to rename a movie's files to its configured naming format."""
+        return self._post("/command", json_data={
+            "name": "RenameMovie",
+            "movieIds": [movie_id],
+        }).json()
 
     def manual_import_lookup(self, folder_path: str, movie_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get list of files available for manual import in a folder."""
@@ -187,4 +194,44 @@ class RadarrClient:
 
     def manual_import(self, import_items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Submit manual import decisions to Radarr."""
-        return self._post("/manualimport", json_data=import_items).json()
+        files = []
+        for item in import_items:
+            path = str(item.get("path", "")).strip()
+            if not path:
+                continue
+
+            files.append({
+                "path": path,
+                "movieId": item["movieId"],
+                "quality": item.get("quality"),
+                "languages": item.get("languages"),
+                "releaseGroup": item.get("releaseGroup") or "",
+                "indexerFlags": item.get("indexerFlags", 0),
+            })
+
+        if not files:
+            return {}
+        
+        return self._post("/command", json_data={
+            "name": "ManualImport",
+            "files": files,
+            "importMode": "Move",
+        }).json()
+
+    def get_command(self, command_id: int) -> Dict[str, Any]:
+        """Poll a queued command's state."""
+        return self._get(f"/command/{command_id}").json()
+
+    def wait_command(self, command_id: int, timeout: int = 120) -> str:
+        """Block until a command reaches a terminal state; return its status."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                status = self.get_command(command_id).get("status", "")
+            except Exception as exc:
+                logger.debug(f"Radarr command {command_id} poll failed: {exc}")
+                return "unknown"
+            if status in ("completed", "failed", "aborted"):
+                return status
+            time.sleep(1)
+        return "timeout"

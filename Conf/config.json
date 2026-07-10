@@ -17,6 +17,7 @@
         "serie_folder_name": "Serie",
         "anime_folder_name": "Anime",
         "music_folder_name": "Music",
+        "live_folder_name": "Live",
         "movie_format": "%(title_name) (%(title_year))/%(title_name) (%(title_year)) [%(quality)]",
         "episode_format": "%(series_name)/S%(season:02d)/%(episode_name) S%(season:02d)E%(episode:02d) [%(quality)]",
         "song_format": "%(artist)/%(album)/%(track_number:02d). %(title)"
@@ -25,7 +26,10 @@
         "auto_select": true,
         "delay_after_download": 0,
         "skip_download": false,
-        "thread_count": 8,
+        "thread_count": 12,
+        "decrypt_worker_count": 8,
+        "subtitle_resolve_workers": 4,
+        "realtime_decrypt": true,
         "concurrent_download": true,
         "select_video": "best",
         "select_audio": "ita|it",
@@ -54,6 +58,7 @@
         "max_retry": 8,
         "verify": true,
         "use_proxy": false,
+        "proxy_scope": "scrap+down",
         "proxy": {
             "http": "http://localhost:8888",
             "https": "http://localhost:8888"

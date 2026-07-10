@@ -14,7 +14,7 @@ from VibraVid.setup import binary_paths, get_ffmpeg_path, get_mkvmerge_path
 from VibraVid.core.ui.tracker import context_tracker
 from VibraVid.core.utils.language import resolve_iso639_2
 
-from .helper.video import detect_ts_timestamp_issues, convert_ts_to_mp4, resolve_compatible_extension, is_mpegts_file
+from .helper.video import detect_ts_timestamp_issues, convert_ts_to_mp4, resolve_compatible_extension, is_mpegts_file, get_stream_codecs
 from .helper.audio import check_duration_v_a, has_audio, get_video_duration, detect_audio_offset
 from .helper.sub import convert_subtitle, extract_vtt_from_wvtt_mp4
 from .capture import capture_ffmpeg_real_time
@@ -201,6 +201,39 @@ def add_encoding_params(ffmpeg_cmd: List[str]):
     else:
         logger.warning("No audio encoding parameters set in config. Using default: libopus with 128k bitrate.")
         ffmpeg_cmd.extend(['-c:a', 'libopus', '-b:a', '128k'])
+
+
+def _is_video_copied() -> bool:
+    """
+    Return True if the effective config stream-copies the video track (rather than re-encoding it)
+    """
+    param_final = _get_param_final()
+    if param_final:
+        return 'copy' in param_final
+    
+    param_video = _get_param_video()
+    if param_video:
+        return 'copy' in param_video
+    
+    return False  # default re-encodes to libx265
+
+
+def _maybe_tag_hevc_for_mkv(ffmpeg_cmd: List[str], video_path: str, out_path: str, video_copied: bool) -> None:
+    """Matroska rejects the MP4 'dvh1'/'dvhe' fourCC tags (Dolby Vision HEVC) when the video is stream-copied, failing the whole mux with:"""
+    if not video_copied:
+        return
+    
+    if os.path.splitext(out_path)[1].lower() != ".mkv":
+        return
+    
+    try:
+        codecs = get_stream_codecs(video_path)
+    except Exception:
+        return
+    
+    if any(s.get("codec_type") == "video" and s.get("codec_name") == "hevc" for s in codecs):
+        ffmpeg_cmd.extend(["-tag:v", "hvc1"])
+        logger.info("Normalizing HEVC video tag to 'hvc1' for Matroska output (Dolby Vision dvh1 compatibility).")
 
 
 def _apply_compatible_extension(video_path: str, out_path: str) -> str:
@@ -586,6 +619,7 @@ def join_audios(video_path: str, audio_tracks: List[Dict[str, str]], out_path: s
         ffmpeg_cmd.extend([f'-disposition:a:{i}', 'default' if i == 0 else '0'])
 
     add_encoding_params(ffmpeg_cmd)
+    _maybe_tag_hevc_for_mkv(ffmpeg_cmd, video_path, out_path, _is_video_copied())
 
     if use_shortest:
         ffmpeg_cmd.extend(['-shortest', '-strict', 'experimental'])
@@ -657,13 +691,13 @@ def join_subtitles(video_path: str, subtitles_list: List[Dict[str, str]], out_pa
     for sub in subtitles_list:
         canonical = os.path.normcase(os.path.abspath(sub.get("path", "")))
         if canonical in seen_paths:
-            logger.warning(f"join_subtitles: duplicate subtitle path skipped → {os.path.basename(sub.get('path', ''))}")
+            logger.warning(f"join_subtitles: duplicate subtitle path skipped -> {os.path.basename(sub.get('path', ''))}")
             continue
         seen_paths.add(canonical)
         deduped.append(sub)
     subtitles_list = deduped
 
-    # Pre-process: wvtt-mp4 → vtt extraction + normal conversion 
+    # Pre-process: wvtt-mp4 -> vtt extraction + normal conversion 
     processed: List[Dict[str, str]] = []
     for subtitle in subtitles_list:
         original_path = subtitle["path"]
@@ -673,7 +707,7 @@ def join_subtitles(video_path: str, subtitles_list: List[Dict[str, str]], out_pa
             vtt_path = str(Path(original_path).with_suffix(".vtt"))
             extracted = extract_vtt_from_wvtt_mp4(original_path, vtt_path)
             if extracted and os.path.exists(extracted) and os.path.getsize(extracted) > 0:
-                logger.info(f"join_subtitles: wvtt extracted → {os.path.basename(extracted)}")
+                logger.info(f"join_subtitles: wvtt extracted -> {os.path.basename(extracted)}")
                 sub = dict(subtitle)
                 sub["path"] = extracted
                 sub["is_wvtt_mp4"] = False
@@ -725,7 +759,7 @@ def join_subtitles(video_path: str, subtitles_list: List[Dict[str, str]], out_pa
         lang_display = subtitle.get("lang", subtitle.get("language", "unknown"))
 
         # ISO 639-2: resolve_iso639_2 already strips _forced/_cc/_sdh via split("_")
-        # e.g. "ita_forced" → "ita",  "en-US" → "eng",  "ita" → "ita"
+        # e.g. "ita_forced" -> "ita",  "en-US" -> "eng",  "ita" -> "ita"
         lang_iso = resolve_iso639_2(lang_display)
 
         console.print(f"[yellow]    - [cyan]Subtitle lang [red]{lang_display}.{sub_ext}")
@@ -748,6 +782,7 @@ def join_subtitles(video_path: str, subtitles_list: List[Dict[str, str]], out_pa
         ffmpeg_cmd += [f"-metadata:s:s:{idx}", f"handler_name={lang_display}"]
 
     ffmpeg_cmd.extend(["-c:v", "copy", "-c:a", "copy", "-c:s", subtitle_codec])
+    _maybe_tag_hevc_for_mkv(ffmpeg_cmd, video_path, out_path, True)
 
     # Disposizioni subtitle 
     # Passo 1: reset everything to 0
@@ -756,7 +791,7 @@ def join_subtitles(video_path: str, subtitles_list: List[Dict[str, str]], out_pa
         ffmpeg_cmd.extend([f"-disposition:s:{idx}", "0"])
 
     # Passo 2: auto-flags (forced / hearing_impaired) da suffissi nel nome lingua
-    # "_forced" → forced,  "_cc" o "_sdh" → hearing_impaired
+    # "_forced" -> forced,  "_cc" o "_sdh" -> hearing_impaired
     for idx, subtitle in enumerate(subtitles_list):
         lang_lower = subtitle.get("language", "").lower()
         is_forced = "_forced" in lang_lower or bool(subtitle.get("forced"))

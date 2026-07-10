@@ -29,6 +29,7 @@ from GUI.searchapp.api.base import Entries
 from VibraVid.core.ui.tracker import  download_tracker, context_tracker
 from VibraVid.utils import config_manager
 from VibraVid.provider.tmdb import tmdb_client
+from VibraVid.cli.run import equivalent_command_builder
 
 from ._download_infra import (
     scheduled_downloads,
@@ -241,6 +242,14 @@ def search(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _log_gui_equivalent_command(site: str, item_payload: Dict[str, Any], season: str = None, episodes: str = None) -> None:
+    """Log the CLI command equivalent to a GUI download."""
+    try:
+        equivalent_command_builder.log_equivalent_command_from_params(site=site, search=item_payload.get("name"), season=season, episode=episodes,)
+    except Exception:
+        pass
+
+
 def _run_download_in_thread(site: str, item_payload: Dict[str, Any], season: str = None, episodes: str = None, media_type: str = "Film", output_path: str = None, audio_format: str = None) -> "concurrent.futures.Future":
     """Run download in background thread. Returns a Future for callers that need to wait.
 
@@ -290,6 +299,7 @@ def _run_download_in_thread(site: str, item_payload: Dict[str, Any], season: str
             if output_path:
                 context_tracker.output_path = output_path
 
+            _log_gui_equivalent_command(site, item_payload, season, episodes)
             print("[_task] Calling api.start_download with:")
             print(f"        season={season}, episodes={episodes}, output_path={output_path}, audio_format={audio_format}")
             try:
@@ -305,7 +315,7 @@ def _run_download_in_thread(site: str, item_payload: Dict[str, Any], season: str
                 error_msg = final_state.get("error") or final_state.get("status") or "download_failed"
                 raise RuntimeError(error_msg)
 
-            print("[_task] ✓ Download completed successfully")
+            print("[_task] Download completed successfully")
         except Exception as e:
             error_msg = str(e) or "Errore sconosciuto"
             print(f"[Error] Download task failed: {error_msg}")
@@ -501,7 +511,7 @@ def series_detail(request: HttpRequest) -> HttpResponse:
         
         # Get series metadata
         seasons = api.get_series_metadata(media_item)
-        
+
         if not seasons:
             messages.warning(request, "Impossibile caricare i dettagli delle stagioni al momento. Potrebbe essere dovuto a download attivi. Riprova tra qualche minuto.")
             seasons = []  # Allow page to load with empty seasons
@@ -611,6 +621,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
                         context_tracker.media_type = media_type
                         context_tracker.is_gui = True
                         context_tracker.is_cancelled_callback = _is_scheduled_cancelled
+                        _log_gui_equivalent_command(source_alias, item_payload, season_num, "*")
 
                         api.start_download(media_item, season=season_num, episodes="*")
                     except Exception as e:
@@ -698,6 +709,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
                         context_tracker.media_type = media_type
                         context_tracker.is_gui = True
                         context_tracker.is_cancelled_callback = _is_scheduled_cancelled
+                        _log_gui_equivalent_command(source_alias, item_payload, season_num, "*")
 
                         api.start_download(media_item, season=season_num, episodes="*")
                     except Exception as e:
@@ -738,7 +750,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
             url = reverse('series_detail') + f"?source_alias={source_alias}&item_payload={item_payload_raw}"
             return redirect(url)
         
-        print(f"[DEBUG] ✓ Proceeding with episodes: {episode_param}")
+        print(f"[DEBUG] Proceeding with episodes: {episode_param}")
         _run_download_in_thread(
             site=source_alias,
             item_payload=item_payload,
@@ -746,7 +758,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
             episodes=episode_param,
             media_type=media_type
         )
-        print(f"[DEBUG] ✓ Download thread started for S{season_number} E{episode_param}")
+        print(f"[DEBUG] Download thread started for S{season_number} E{episode_param}")
 
         return redirect("download_dashboard")
 
@@ -1265,7 +1277,7 @@ def upload_service_zip(request: HttpRequest) -> JsonResponse:
                 if syntax_error:
                     break
             if syntax_error:
-                errors.append(f"'{svc_name}': errore di sintassi nel plugin → {syntax_error}")
+                errors.append(f"'{svc_name}': errore di sintassi nel plugin -> {syntax_error}")
                 continue
 
             # Validate __init__.py has required declarations
@@ -2071,7 +2083,7 @@ _UPDATE_CHECK_TTL = 3600  # re-fetch GitHub releases at most once per hour
 def check_updates(request: HttpRequest) -> JsonResponse:
     """Return current and latest version info, with a 1-hour in-memory cache."""
     import urllib.request
-    from VibraVid.upload.version import __version__
+    from VibraVid.utils.upload.version import __version__
 
     cached = _update_check_cache
     if cached and time.monotonic() - cached.get("ts", 0) < _UPDATE_CHECK_TTL:

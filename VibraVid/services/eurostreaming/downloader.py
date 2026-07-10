@@ -31,7 +31,7 @@ def _download_episode(obj_episode, season_number: int, episode_number: int, scra
     Downloads a specific episode from the specified season.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{season_number}E{episode_number}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{season_number}E{episode_number}) \n")
 
     link_url, host = scrape_serie.get_episode_link(season_number, episode_number)
     if not link_url:
@@ -63,12 +63,6 @@ def _download_episode(obj_episode, season_number: int, episode_number: int, scra
 def download_series(select_title: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None) -> None:
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - select_title (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection that bypasses manual input
-        - episode_selection (str, optional): Pre-defined episode selection that bypasses manual input
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if scrape_serie is None:

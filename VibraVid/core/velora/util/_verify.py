@@ -5,9 +5,9 @@ import subprocess
 from pathlib import Path
 from typing import Tuple
 
+from VibraVid.utils import dump_to_string
 from VibraVid.utils.os import os_manager
 from VibraVid.setup import get_ffprobe_path
-from VibraVid.setup import get_mp4dump_path
 
 
 
@@ -71,36 +71,20 @@ def _ffprobe_streams(ffprobe: str, file_path: str) -> Tuple[bool, str]:
     return True, summary
 
 
-def _mp4dump_clean(mp4dump: str, file_path: str) -> Tuple[bool, str]:
-    """
-    Best-effort encryption-residue scan with Bento4's mp4dump.
-    """
+def _mp4dump_clean(file_path: str) -> Tuple[bool, str]:
+    """Return (clean, message). clean=True means no residual encryption boxes."""
     try:
         with open(file_path, "rb") as fh:
             head = fh.read(_MP4DUMP_SCAN_BYTES)
 
         with os_manager.temp_binary_file(head, suffix=".mp4") as tmp_path:
-            result = subprocess.run(
-                [mp4dump, "--verbosity", "0", tmp_path],
-                capture_output=True,
-                timeout=5,
-            )
+            text = dump_to_string(tmp_path, format="text", verbosity=0)
 
     except Exception as exc:
-        return True, f"mp4dump failed to launch: {exc} (skipped)"
+        return True, f"mp4dump failed: {exc} (skipped)"
 
-    if result.returncode != 0:
-        return True, "mp4dump non-zero exit (skipped)"
-
-    text = ""
-    for enc in ("utf-8", "utf-16", "utf-16-le", "latin-1"):
-        try:
-            text = result.stdout.decode(enc).lstrip("\ufeff")
-            break
-        except UnicodeDecodeError:
-            continue
     if not text:
-        return True, "mp4dump produced no decodable output (skipped)"
+        return True, "mp4dump produced no output (skipped)"
 
     flagged = [
         marker
@@ -125,11 +109,7 @@ def verify_decrypted_media(file_path) -> Tuple[bool, str]:
     if not ok:
         return False, ffprobe_msg
 
-    mp4dump_path = get_mp4dump_path()
-    if mp4dump_path:
-        clean, mp4dump_msg = _mp4dump_clean(mp4dump_path, str(p))
-        if not clean:
-            return False, f"{ffprobe_msg}; {mp4dump_msg}"
-        return True, f"{ffprobe_msg}; {mp4dump_msg}"
-
-    return True, ffprobe_msg
+    clean, mp4dump_msg = _mp4dump_clean(str(p))
+    if not clean:
+        return False, f"{ffprobe_msg}; {mp4dump_msg}"
+    return True, f"{ffprobe_msg}; {mp4dump_msg}"

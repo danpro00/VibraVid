@@ -17,11 +17,11 @@ from VibraVid.utils import config_manager, start_message, setup_logger, get_log_
 from VibraVid.core.ui.tracker import context_tracker
 from VibraVid.services._base import load_search_functions
 from VibraVid.utils.hooks import execute_hooks, get_last_hook_context
-from VibraVid.upload import git_update, binary_update
+from VibraVid.utils.upload import git_update, binary_update
 from VibraVid.setup.system import _initialize_paths
-from VibraVid.setup.system import (get_ffmpeg_path, get_ffprobe_path, get_bento4_decrypt_path, get_mp4dump_path, get_wvd_path, get_prd_path, get_shaka_packager_path, get_dovi_tool_path, get_mkvmerge_path, get_mkvpropedit_path, get_velora_path)
+from VibraVid.setup.system import (get_ffmpeg_path, get_ffprobe_path, get_bento4_decrypt_path, get_wvd_path, get_prd_path, get_shaka_packager_path, get_dovi_tool_path, get_mkvmerge_path, get_mkvpropedit_path, get_velora_path)
 from VibraVid.setup.binary_paths import binary_paths
-from VibraVid.upload.version import __version__, __title__
+from VibraVid.utils.upload.version import __version__, __title__
 
 from VibraVid.cli.command.global_search import global_search as call_global_search
 from VibraVid.cli.command.download import handle_direct_download
@@ -47,8 +47,9 @@ CATEGORY_MAP = {
 
 CLOSE_CONSOLE = config_manager.config.get_bool('DEFAULT', 'close_console')
 PERSISTENT_ARGS = {
-    'use_proxy', 
-    'extension', 
+    'use_proxy',
+    'proxy_scope',
+    'extension',
     'close_console'
 }
 _VERSION_FLAGS = {
@@ -59,7 +60,6 @@ _VERSION_FLAGS = {
     "mkvmerge": ["--version"],
     "mkvpropedit": ["--version"],
     "Bento4 (mp4decrypt)": [],
-    "Bento4 (mp4dump)": [],
 }
 
 _EQUIVALENT_CMD_EXCLUDED_DESTS = {
@@ -171,7 +171,8 @@ def setup_argument_parser(search_functions, site_module=None, extra_site_modules
     # ── Download options
     dl_opts = parser.add_argument_group('Download options')
     dl_opts.add_argument('--extension', type=str, metavar='EXT', help='Output container (mkv, mp4)')
-    dl_opts.add_argument('--use_proxy', action='store_true', help='Route requests through configured proxy')
+    dl_opts.add_argument('--use_proxy', action='store_const', const=True, default=None, help='Route requests through configured proxy')
+    dl_opts.add_argument('--proxy-scope', dest='proxy_scope', type=str, choices=['scrap', 'down', 'scrap+down'], metavar='scrap|down|scrap+down', help='Where to apply the proxy: scraping only, downloads only, or both')
     dl_opts.add_argument('--skip-ts', dest='skip_ts', action='store_const', const=True, default=None, help='Skip TS/CAM releases (StreamingCommunity)')
     dl_opts.add_argument('--close-console', dest='close_console', type=str, choices=['true', 'false'], metavar='true|false', help='Exit after last download (overrides config)')
 
@@ -235,6 +236,7 @@ def apply_config_updates(args):
         'audio':         'DOWNLOAD.select_audio',
         'subtitle':      'DOWNLOAD.select_subtitle',
         'use_proxy':     'REQUESTS.use_proxy',
+        'proxy_scope':   'REQUESTS.proxy_scope',
         'extension':     'PROCESS.extension',
         'close_console': 'DEFAULT.close_console',
         'skip_ts':       'DEFAULT.skip_ts_versions',
@@ -407,7 +409,6 @@ def show_dependencies(search_functions):
         "FFmpeg": get_ffmpeg_path(),
         "FFprobe": get_ffprobe_path(),
         "Bento4 (mp4decrypt)": get_bento4_decrypt_path(),
-        "Bento4 (mp4dump)": get_mp4dump_path(),
         "Shaka Packager": get_shaka_packager_path(),
         "dovi_tool": get_dovi_tool_path(),
         "mkvmerge": get_mkvmerge_path(),

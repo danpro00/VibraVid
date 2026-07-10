@@ -2,6 +2,7 @@
 
 import re
 import logging
+import threading
 
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.services._base.object import SeasonManager, Episode, Season
@@ -34,6 +35,7 @@ class GetSerieInfo:
         self.series_name = series_name
         self.seasons_manager = SeasonManager()
         self.all_episodes_by_season = {}
+        self._collect_lock = threading.Lock()
 
         # Setup headers
         self.headers = get_headers()
@@ -151,8 +153,9 @@ class GetSerieInfo:
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
         """Get the total number of seasons available for the series."""
-        if not self.seasons_manager.seasons:
-            self.collect_info_title()
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_info_title()
 
         return len(self.seasons_manager.seasons)
 
@@ -164,7 +167,8 @@ class GetSerieInfo:
             logger.error(f"Season {season_number} not found")
             return []
 
-        if not season.episodes.episodes:
-            self.collect_info_season(season_number)
+        with self._collect_lock:
+            if not season.episodes.episodes:
+                self.collect_info_season(season_number)
 
         return season.episodes.episodes

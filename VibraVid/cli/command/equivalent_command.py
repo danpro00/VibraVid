@@ -13,6 +13,7 @@ class EquivalentCommandBuilder:
         ("cli_season_selection", "--season"),
         ("cli_episode_selection", "--episode"),
     )
+    _SHELL_UNSAFE = (" ", "\t", "*", "?", "[", "]", "(", ")", "{", "}", "&", "|", ";", "<", ">", "$", "`", "'", '"', "\\")
 
     def __init__(self, excluded_dests: Iterable[str], program_name: str = "manual.py"):
         """
@@ -41,6 +42,31 @@ class EquivalentCommandBuilder:
     def log_equivalent_command(self, args, parser, context_tracker, site_option_dests: Iterable[str] = None) -> None:
         """Build and log the equivalent command line for the given args and context_tracker, if a site is set."""
         equivalent_cmd = self.build(args, parser, context_tracker, site_option_dests)
+        if equivalent_cmd:
+            logger.info(f"Equivalent command: {equivalent_cmd}")
+
+    def build_from_params(self, site: Any, search: Any = None, item: Any = None, season: Any = None, episode: Any = None, options: dict = None) -> str | None:
+        """Build the equivalent command from explicit params (e.g. a GUI download), without argparse."""
+        if site is None or site == "":
+            return None
+
+        parts = ["python", self._program_name, "--site", str(site)]
+        for flag, value in (("-s", search), ("--item", item), ("--season", season), ("--episode", episode)):
+            if value is None or value == "":
+                continue
+            parts += [flag, self._quote_if_needed(value)]
+
+        for dest, value in (options or {}).items():
+            if value is None or value is False or value == "":
+                continue
+            flag = "--" + str(dest).replace("_", "-")
+            parts += self._flag_and_value(flag, value)
+
+        return " ".join(parts)
+
+    def log_equivalent_command_from_params(self, *args, **kwargs) -> None:
+        """Build and log the equivalent command from explicit params, if a site is set."""
+        equivalent_cmd = self.build_from_params(*args, **kwargs)
         if equivalent_cmd:
             logger.info(f"Equivalent command: {equivalent_cmd}")
 
@@ -85,4 +111,6 @@ class EquivalentCommandBuilder:
     @staticmethod
     def _quote_if_needed(value: Any) -> str:
         text = str(value)
-        return f'"{text}"' if " " in text else text
+        if text == "" or any(ch in text for ch in EquivalentCommandBuilder._SHELL_UNSAFE):
+            return f'"{text}"'
+        return text

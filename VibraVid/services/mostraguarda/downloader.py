@@ -34,7 +34,7 @@ def download_film(select_title: Entries) -> str:
         - str: output path
     """
     start_message()
-    console.print(f"[bold yellow]Download: [red]{site_constants.SITE_NAME}[/red] → [cyan]{select_title.name} \n")
+    console.print(f"[bold yellow]Download: [red]{site_constants.SITE_NAME}[/red] -> [cyan]{select_title.name} \n")
 
     tmdb_id = getattr(select_title, 'tmdb_id', None) or getattr(select_title, 'id', None)
     imdb_id = tmdb.get_imdb_id(tmdb_id, 'movie') or tmdb_id
@@ -62,7 +62,7 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     """Downloads a specific episode from a VidXgo-backed series."""
     start_message()
     series_display = getattr(scrape_serie, 'series_display_name', None) or scrape_serie.series_name
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{series_display} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{series_display} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
     # Define output path
     path_components, filename = map_episode_path(series_display, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
@@ -79,7 +79,9 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
 
 
 def download_series(select_title: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie=None) -> None:
-    """Handle downloading a complete series through VidXgo."""
+    """
+    Handle downloading a complete series.
+    """
     start_message()
     tmdb_id = getattr(select_title, 'tmdb_id', None) or getattr(select_title, 'id', None)
     imdb_id = tmdb.get_imdb_id(tmdb_id, 'tv') or tmdb_id

@@ -467,8 +467,6 @@ class ConfigManager:
             if response.status_code == 200:
                 with open(file_path, 'wb') as f:
                     f.write(response.content)
-                file_size = len(response.content) / 1024
-                console.print(f"Download complete: {file_name} ({file_size:.2f} KB)")
             else:
                 error_msg = f"HTTP Error: {response.status_code}, Response: {response.text[:100]}"
                 console.print(f"[red]Download failed: {error_msg}")

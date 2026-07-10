@@ -4,6 +4,7 @@
 import re
 import difflib
 import logging
+import threading
 
 from VibraVid.services._base.object import SeasonManager, Season, Episode, EpisodeManager
 from VibraVid.utils.http_client import create_client, get_userAgent
@@ -24,11 +25,16 @@ class GetSerieInfo:
         self.seasons_manager = SeasonManager()
         self._content: str = ''
         self._loaded = False
+        self._load_lock = threading.Lock()
 
     def _load(self) -> None:
+        with self._load_lock:
+            self._load_locked()
+
+    def _load_locked(self) -> None:
         if self._loaded:
             return
-        
+
         self._loaded = True
         headers = {'User-Agent': get_userAgent()}
         best_ratio = 0.0
@@ -98,7 +104,7 @@ class GetSerieInfo:
         """
         Return (url, host) for the best available hosting link for the episode.
 
-        Priority: Loadm → MaxStream (uprot.net/msf) → None
+        Priority: Loadm -> MaxStream (uprot.net/msf) -> None
         Host values: 'loadm', 'maxstream', None
         """
         if not self._loaded:

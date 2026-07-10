@@ -17,7 +17,8 @@ from VibraVid.services._base.tv_download_manager import process_season_selection
 from VibraVid.core.downloader import DASH_Downloader
 
 from .scrapper import GetSerieInfo
-from .client import get_playback_url, get_tracking_info, generate_license_url
+from .client import (get_playback_url, get_tracking_info, generate_license_url)
+from .regions import get_region
 
 
 console = Console()
@@ -30,39 +31,31 @@ def _subtitles_to_other_tracks(subtitles: list) -> list:
     for sub in subtitles or []:
         if not isinstance(sub, dict):
             continue
-
         sub_url = sub.get("url")
         if not sub_url:
             continue
-
-        track = {"type": "subtitle", "url": sub_url, "language": sub.get("language") or "und", "name": sub.get("language") or "Subtitle",}
+        track = {"type": "subtitle", "url": sub_url, "language": sub.get("language") or "und", "name": sub.get("language") or "Subtitle"}
         fmt = str(sub.get("format") or "").strip().lower().lstrip(".")
         if fmt:
             track["extension"] = fmt
             track["format"] = fmt
-
         tracks.append(track)
-
     return tracks
 
 
 def try_mpd(url, qualities):
-    """
-    Given a url containing one of the qualities (hd/hr/sd), try to replace it with the others and check which manifest exists.
-    """
+    """Try to find an existing manifest by swapping the quality token in the filename."""
     parsed = urlparse(url)
-    path_parts = parsed.path.rsplit('/', 1)
+    path_parts = parsed.path.rsplit("/", 1)
     if len(path_parts) != 2:
         return None
-    
     dir_path, filename = path_parts
 
-    # Find the current quality in the filename
     def replace_quality(filename, old_q, new_q):
         if f"{old_q}_" in filename:
             return filename.replace(f"{old_q}_", f"{new_q}_", 1)
         elif filename.startswith(f"{old_q}_"):
-            return f"{new_q}_" + filename[len(f"{old_q}_") :]
+            return f"{new_q}_" + filename[len(f"{old_q}_"):]
         return filename
 
     for q in qualities:
@@ -71,11 +64,10 @@ def try_mpd(url, qualities):
                 new_filename = replace_quality(filename, old_q, q)
                 break
         else:
-            new_filename = filename  # No quality found, use original filename
+            new_filename = filename
 
         new_path = f"{dir_path}/{new_filename}"
         mpd_url = urlunparse(parsed._replace(path=new_path)).strip()
-
         try:
             with create_client() as client:
                 r = client.head(mpd_url)
@@ -83,82 +75,69 @@ def try_mpd(url, qualities):
                 return mpd_url
         except Exception:
             pass
-
     return None
 
-def get_manifest(base):
-    """
-    Try to get the manifest URL by checking different qualities.
-    """
-    manifest_qualities = ["hd", "hr", "sd"]
 
-    mpd_url = try_mpd(base, manifest_qualities)
+def resolve_manifest(base):
+    """Resolve the .mpd manifest URL."""
+    if get_region() == "es":
+        return base
+    mpd_url = try_mpd(base, ["hd", "hr", "sd"])
     if not mpd_url:
-        exit(1)
-
+        console.print("[red]Could not resolve a valid manifest URL")
+        return base
     return mpd_url
 
 
-def download_film(select_title: Entries) -> Tuple[str, bool]:
-    """
-    Downloads a film using the provided Entries information.
-    """
-    start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
+def _resolve_and_download(content_id: str, output_path: str) -> Tuple[str, bool]:
+    """Shared pipeline: content id -> playback -> SMIL -> MPD -> DASH download"""
+    playback_json = get_playback_url(content_id)
+    tracking = get_tracking_info(playback_json)
+    if not tracking or not tracking.get("videos"):
+        console.print("[red]No playable video stream returned (geo/DRM/anonymous-proxy block?)")
+        return output_path, False
 
-    # Define the filename and path for the downloaded film
+    video = tracking["videos"][0]
+    mpd_url = resolve_manifest(video["url"])
+    license_url, license_params = generate_license_url(video)
+    if license_params:
+        license_url = f"{license_url}?{urllib.parse.urlencode(license_params)}"
+
+    return DASH_Downloader(
+        mpd_url=mpd_url,
+        license_url=license_url,
+        other_tracks=_subtitles_to_other_tracks(tracking.get("subtitles")) or None,
+        output_path=output_path,
+    ).start()
+
+
+def download_film(select_title: Entries) -> Tuple[str, bool]:
+    """Download a single film / episode (used for ES /player/ URLs too)."""
+    start_message()
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} \n")
+
     path_components, filename = map_movie_path(select_title.name, select_title.year)
     movie_path = movie_folder(*path_components)
     movie_name = f"{filename}.{extension_output}"
 
-    # Get playback URL and tracking info
-    playback_json = get_playback_url(select_title.id)
-    tracking_info = get_tracking_info(playback_json)['videos'][0]
-
-    license_url, license_params = generate_license_url(tracking_info)
-    if license_params:
-        license_url = f"{license_url}?{urllib.parse.urlencode(license_params)}"
-
-    return DASH_Downloader(mpd_url=get_manifest(tracking_info['url']), license_url=license_url, output_path=os.path.join(movie_path, movie_name)).start()
+    return _resolve_and_download(select_title.id, os.path.join(movie_path, movie_name))
 
 
 def download_episode(obj_episode, index_season_selected, index_episode_selected, scrape_serie):
-    """
-    Downloads a specific episode from the specified season.
-    """
+    """Download a specific episode from a season."""
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
-    # Define filename and path for the downloaded video
-    path_components, filename = map_episode_path(scrape_serie.series_name, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
+    path_components, filename = map_episode_path(scrape_serie.series_name, getattr(scrape_serie, "year", None), index_season_selected, index_episode_selected, obj_episode.name)
     episode_path = os_manager.get_sanitize_path(series_folder(*path_components))
     episode_name = f"{filename}.{extension_output}"
 
-    # Generate mpd and license URLs
-    playback_json = get_playback_url(obj_episode.id)
-    tracking_info = get_tracking_info(playback_json)
-    license_url, license_params = generate_license_url(tracking_info['videos'][0])
-    if license_params:
-        license_url = f"{license_url}?{urllib.parse.urlencode(license_params)}"
+    return _resolve_and_download(obj_episode.id, os.path.join(episode_path, episode_name))
 
-    # Download the episode
-    return DASH_Downloader(
-        mpd_url=get_manifest(tracking_info['videos'][0]['url']),
-        license_url=license_url,
-        other_tracks=_subtitles_to_other_tracks(tracking_info['subtitles']) or None,
-        output_path=os.path.join(episode_path, episode_name),
-    ).start()
-    
 
-def download_series(dict_serie: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None) -> None:
+def download_series(dict_serie: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie=None) -> None:
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - dict_serie (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection that bypasses manual input
-        - episode_selection (str, optional): Pre-defined episode selection that bypasses manual input
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if scrape_serie is None:
@@ -170,13 +149,13 @@ def download_series(dict_serie: Entries, season_selection: str = None, episode_s
         """Callback to handle episode downloads for a specific season"""
         def download_video_callback(obj_episode, season_idx, episode_idx):
             return download_episode(obj_episode, season_idx, episode_idx, scrape_serie)
-        
+
         process_episode_download(
             index_season_selected=season_number,
             scrape_serie=scrape_serie,
             download_video_callback=download_video_callback,
             download_all=download_all,
-            episode_selection=episode_selection
+            episode_selection=episode_selection,
         )
 
     process_season_selection(
@@ -184,5 +163,5 @@ def download_series(dict_serie: Entries, season_selection: str = None, episode_s
         seasons_count=seasons_count,
         season_selection=season_selection,
         episode_selection=episode_selection,
-        download_episode_callback=download_episode_callback
+        download_episode_callback=download_episode_callback,
     )

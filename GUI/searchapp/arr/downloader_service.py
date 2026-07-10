@@ -155,48 +155,39 @@ class ArrDownloaderService:
                         series_root = self._fallback_series_root(title)
                     logger.info(f"[S{season_num}E{ep_num}] Using series root path: '{series_root}'")
 
-                    # Rescan series on the new path
+                    # The download can run for hours; the series may have been removed meanwhile.
+                    # RescanSeries on a stale id makes Sonarr raise ModelNotFoundException.
+                    if not self.sonarr.series_exists(serie["id"]):
+                        logger.error(f"Series '{title}' (id {serie['id']}) no longer exists in Sonarr, skipping import")
+                        self.last_error = "series_removed"
+                        any_success = False
+                        continue
+
+                    # A plain rescan is enough whenever the file name parses (i.e. carries SxxExx).
                     try:
                         self.sonarr.command_rescan_series(serie["id"])
-                        time.sleep(1)
-                        self.sonarr.command_downloaded_episodes_scan(self._translate_path(series_root))
-                        logger.info(f"Rescan/import scan completed for S{season_num}E{ep_num}")
+                        logger.info(f"Rescan issued for S{season_num}E{ep_num}")
                     except Exception as scan_exc:
                         logger.warning(f"Rescan failed: {scan_exc}")
 
-                    # Verify import state without manual import payload
-                    imported = False
-                    for _ in range(24):  # Wait up to 120 seconds
-                        try:
-                            episode = self.sonarr.get_episode(ep_id)
-                            if episode.get("hasFile") or episode.get("episodeFileId"):
-                                imported = True
-                                break
-                        except Exception as exc:
-                            logger.warning(f"Failed to verify Sonarr episode import: {exc}")
-                        time.sleep(5)
+                    imported = self._wait_episode_has_file(ep_id, attempts=6)
+
+                    # VibraVid names its output after the scraped title, which frequently has no
+                    # SxxExx marker, so Sonarr's parser rejects it. Import explicitly by
+                    # episodeId, which skips parsing entirely. Note: DownloadedEpisodesScan is
+                    # useless here — Sonarr refuses folders mapped to an existing series.
                     if not imported:
                         result_name = item_payload.get("name", matched_title)
                         result_year = item_payload.get("year", year)
                         fallback_folder = self._get_vibrativo_serie_output(series_root, result_name, season_num, result_year)
+                        scan_folders = [self._translate_path(target_folder)]
                         if fallback_folder and fallback_folder != target_folder:
-                            logger.warning(
-                                f"S{season_num}E{ep_num} import not confirmed from '{target_folder}', "
-                                f"trying fallback scan path '{fallback_folder}'"
-                            )
-                            try:
-                                self.sonarr.command_downloaded_episodes_scan(self._translate_path(fallback_folder))
-                            except Exception as fallback_scan_exc:
-                                logger.warning(f"Fallback rescan failed: {fallback_scan_exc}")
-                            for _ in range(12):
-                                try:
-                                    episode = self.sonarr.get_episode(ep_id)
-                                    if episode.get("hasFile") or episode.get("episodeFileId"):
-                                        imported = True
-                                        break
-                                except Exception as exc:
-                                    logger.warning(f"Failed to verify Sonarr episode import after fallback scan: {exc}")
-                                time.sleep(5)
+                            scan_folders.append(self._translate_path(fallback_folder))
+                        logger.warning(
+                            f"S{season_num}E{ep_num} not imported by rescan, "
+                            f"falling back to manual import from {scan_folders}"
+                        )
+                        imported = self._confirm_episode_import(serie["id"], ep_id, scan_folders=scan_folders)
 
                     if not imported:
                         logger.error(f"S{season_num}E{ep_num} import not confirmed in Sonarr")
@@ -204,11 +195,17 @@ class ArrDownloaderService:
                         any_success = False
                         continue
 
+                    try:
+                        self.sonarr.command_rename_series(serie["id"])
+                        logger.info(f"Rename command issued for S{season_num}E{ep_num} of '{title}'")
+                    except Exception as rename_exc:
+                        logger.warning(f"Sonarr rename failed for '{title}': {rename_exc}")
+
                     logger.info(f"S{season_num}E{ep_num} of '{title}' completed and imported")
                 except Exception as exc:
                     logger.error(f"S{season_num}E{ep_num} of '{title}' failed: {exc}")
                     self.last_error = str(exc)
-                    # Don't unmonitor on failure → stays in Sonarr's wanted list for retry
+                    # Don't unmonitor on failure -> stays in Sonarr's wanted list for retry
                     any_success = False
 
         return any_success
@@ -282,57 +279,53 @@ class ArrDownloaderService:
             result_year = item_payload.get("year", year)
             fallback_folder = self._get_vibrativo_movie_output(target_folder, result_name, result_year)
 
-            # Rescan movie on the new path
+            # The download can run for hours; the movie may have been removed meanwhile.
+            # RescanMovie on a stale id makes Radarr raise ModelNotFoundException.
+            if not self.radarr.movie_exists(movie_id):
+                logger.error(f"Movie '{title}' (id {movie_id}) no longer exists in Radarr, skipping import")
+                self.last_error = "movie_removed"
+                return False
+
+            # A plain rescan is enough whenever the file name parses (i.e. carries a year).
             try:
                 self.radarr.command_rescan_movie(movie_id)
-                time.sleep(1)
-                self.radarr.command_downloaded_movies_scan(self._translate_path(target_folder))
-                logger.info(f"Rescan/import scan completed for '{title}'")
+                logger.info(f"Rescan issued for '{title}'")
             except Exception as scan_exc:
                 logger.warning(f"Rescan failed: {scan_exc}")
 
-            # Verify import state without manual import payload
-            imported = False
-            for _ in range(60):  # Wait up to 300 seconds
-                try:
-                    movie_obj = self.radarr.get_movie_by_id(movie_id)
-                    if movie_obj.get("hasFile") or movie_obj.get("movieFileId"):
-                        imported = True
-                        break
-                except Exception as exc:
-                    logger.warning(f"Failed to verify Radarr movie import: {exc}")
-                time.sleep(5)
+            imported = self._wait_movie_has_file(movie_id, attempts=6)
+
+            # VibraVid names its output after the scraped title, often without a year
+            # ("Parasite.mkv"), which Radarr's parser rejects as [Permanent] Unable to parse
+            # file. Import those explicitly by movieId, which skips parsing entirely.
+            # Note: DownloadedMoviesScan is useless here — Radarr always answers
+            # "Unable to process folder that is mapped to an existing movie".
             if not imported:
+                scan_folders = [self._translate_path(target_folder)]
                 if fallback_folder and fallback_folder != target_folder:
-                    logger.warning(
-                        f"Movie '{title}' import not confirmed from '{target_folder}', "
-                        f"trying fallback scan path '{fallback_folder}'"
-                    )
-                    try:
-                        self.radarr.command_downloaded_movies_scan(self._translate_path(fallback_folder))
-                    except Exception as fallback_scan_exc:
-                        logger.warning(f"Fallback movie rescan failed: {fallback_scan_exc}")
-                    for _ in range(24):
-                        try:
-                            movie_obj = self.radarr.get_movie_by_id(movie_id)
-                            if movie_obj.get("hasFile") or movie_obj.get("movieFileId"):
-                                imported = True
-                                break
-                        except Exception as exc:
-                            logger.warning(f"Failed to verify Radarr movie import after fallback scan: {exc}")
-                        time.sleep(5)
+                    scan_folders.append(self._translate_path(fallback_folder))
+                logger.warning(
+                    f"Movie '{title}' not imported by rescan, falling back to manual import from {scan_folders}"
+                )
+                imported = self._confirm_movie_import(movie_id, scan_folders=scan_folders)
 
             if not imported:
                 logger.error(f"Movie '{title}' import not confirmed in Radarr")
                 self.last_error = "import_not_confirmed"
                 return False
 
+            try:
+                self.radarr.command_rename_movie(movie_id)
+                logger.info(f"Rename command issued for '{title}'")
+            except Exception as rename_exc:
+                logger.warning(f"Radarr rename failed for '{title}': {rename_exc}")
+
             logger.info(f"'{title}' completed and imported")
             return True
         except Exception as exc:
             logger.error(f"'{title}' failed: {exc}")
             self.last_error = str(exc)
-            # Don't unmonitor on failure → stays in Radarr's wanted list for retry
+            # Don't unmonitor on failure -> stays in Radarr's wanted list for retry
             return False
 
     # ── helpers ──────────────────────────────────────────
@@ -390,7 +383,7 @@ class ArrDownloaderService:
             target_prefix = target_prefix.rstrip("/\\")
             if path == source_prefix or path.startswith(source_prefix + "/") or path.startswith(source_prefix + "\\"):
                 translated = target_prefix + path[len(source_prefix):]
-                logger.info(f"[path_map] '{path}' → '{translated}'")
+                logger.info(f"[path_map] '{path}' -> '{translated}'")
                 return translated
         if reverse:
             logger.info(f"[path_map] No reverse mapping matched '{path}', leaving it unchanged")
@@ -398,7 +391,7 @@ class ArrDownloaderService:
 
     @staticmethod
     def _strip_accents(text: str) -> str:
-        """Replace accented characters with their ASCII base: à→a, è→e, ì→i, ò→o, ù→u, etc."""
+        """Replace accented characters with their ASCII base: à->a, è->e, ì->i, ò->o, ù->u, etc."""
         import unicodedata
         return "".join(
             c for c in unicodedata.normalize("NFKD", text)
@@ -576,10 +569,10 @@ class ArrDownloaderService:
 
             api = get_api(provider)
 
-            # Strip accents from search query: à→a, è→e, ì→i, ò→o, ù→u …
+            # Strip accents from search query: à->a, è->e, ì->i, ò->o, ù->u ...
             search_query = self._strip_accents(title).strip()
             if search_query != title:
-                logger.info(f"[search] Stripped accents: '{title}' → '{search_query}'")
+                logger.info(f"[search] Stripped accents: '{title}' -> '{search_query}'")
 
             logger.info(
                 f"[search] provider='{provider}' query='{search_query}' "
@@ -674,7 +667,7 @@ class ArrDownloaderService:
                         )
                         continue
                     best = r
-                    logger.info(f"[tmdb_check] MATCH '{r_name}' ({r_year}) — tmdb_id={r_tmdb} ✓")
+                    logger.info(f"[tmdb_check] MATCH '{r_name}' ({r_year}) — tmdb_id={r_tmdb} OK")
                     break
 
                 # ── Title compatibility check ──────────────────────────────
@@ -1045,34 +1038,28 @@ class ArrDownloaderService:
                     if not path:
                         continue
 
-                    # Sonarr v3 requires seriesId and episodeIds at root level for POST
-                    ep_ids = [ep["id"] for ep in item.get("episodes", []) if "id" in ep]
-                    if not ep_ids:
-                        ep_ids = [episode_id]  # Fallback to the requested episode if not parsed
+                    # Sonarr cannot infer the episode from a name without SxxExx: bind it
+                    # to the episode we just downloaded.
+                    episodes = [ep for ep in item.get("episodes", []) if ep.get("id")]
+                    if not episodes:
+                        episodes = [{"id": episode_id}]
 
                     post_item = dict(item)
                     post_item["seriesId"] = series_id
-                    post_item["episodeIds"] = ep_ids
+                    post_item["episodes"] = episodes
                     import_payload.append(post_item)
 
                 if import_payload:
-                    self.sonarr.manual_import(import_payload)
+                    result = self.sonarr.manual_import(import_payload)
                     logger.info(f"Manual import submitted for {len(import_payload)} file(s) from '{folder}'")
+                    if result.get("id"):
+                        status = self.sonarr.wait_command(result["id"])
+                        logger.info(f"Sonarr ManualImport command finished: {status}")
                     break
             except Exception as exc:
                 logger.warning(f"Sonarr manual import from '{folder}' failed: {exc}")
 
-        # Verify import state: episode must have an attached file id.
-        for _ in range(24):  # Wait up to 120 seconds
-            try:
-                episode = self.sonarr.get_episode(episode_id)
-                if episode.get("hasFile") or episode.get("episodeFileId"):
-                    return True
-            except Exception as exc:
-                logger.warning(f"Failed to verify Sonarr episode import: {exc}")
-            time.sleep(5)
-
-        return False
+        return self._wait_episode_has_file(episode_id, attempts=24)
 
     def _confirm_movie_import(self, movie_id: int,
                               scan_folders: Optional[list] = None,
@@ -1098,19 +1085,41 @@ class ArrDownloaderService:
                     import_payload.append(post_item)
 
                 if import_payload:
-                    self.radarr.manual_import(import_payload)
+                    result = self.radarr.manual_import(import_payload)
                     logger.info(f"Manual import submitted for {len(import_payload)} file(s) from '{folder}'")
+                    if result.get("id"):
+                        status = self.radarr.wait_command(result["id"])
+                        logger.info(f"Radarr ManualImport command finished: {status}")
                     break
             except Exception as exc:
                 logger.warning(f"Radarr manual import from '{folder}' failed: {exc}")
 
-        # Verify import state: movie must have an attached file id or hasFile=True.
-        for _ in range(60):  # Wait up to 300 seconds
+        return self._wait_movie_has_file(movie_id, attempts=24)
+
+    # ── import polling ───────────────────────────────────
+
+    def _wait_movie_has_file(self, movie_id: int, attempts: int, delay: int = 5) -> bool:
+        """Poll Radarr until the movie has an attached file."""
+        for attempt in range(attempts):
             try:
                 movie = self.radarr.get_movie_by_id(movie_id)
                 if movie.get("hasFile") or movie.get("movieFileId"):
                     return True
             except Exception as exc:
                 logger.warning(f"Failed to verify Radarr movie import: {exc}")
-            time.sleep(5)
+            if attempt < attempts - 1:
+                time.sleep(delay)
+        return False
+
+    def _wait_episode_has_file(self, episode_id: int, attempts: int, delay: int = 5) -> bool:
+        """Poll Sonarr until the episode has an attached file."""
+        for attempt in range(attempts):
+            try:
+                episode = self.sonarr.get_episode(episode_id)
+                if episode.get("hasFile") or episode.get("episodeFileId"):
+                    return True
+            except Exception as exc:
+                logger.warning(f"Failed to verify Sonarr episode import: {exc}")
+            if attempt < attempts - 1:
+                time.sleep(delay)
         return False

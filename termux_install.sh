@@ -96,10 +96,10 @@ pkg install -y python ffmpeg mkvtoolnix rust clang git cmake make < /dev/null ||
     exit 1
 }
 
-# 4b. Compile Bento4 (mp4decrypt and mp4dump) from source
-echo -e "\n${YELLOW}[3b/5] Compilazione di Bento4 (mp4decrypt/mp4dump) da sorgente...${NC_REG}"
-if [ -f "$HOME/.local/bin/binary/mp4decrypt" ] && [ -f "$HOME/.local/bin/binary/mp4dump" ]; then
-    echo -e "${GREEN}Bento4 (mp4decrypt/mp4dump) è già compilato e presente.${NC_REG}"
+# 4b. Compile Bento4 (mp4decrypt) from source
+echo -e "\n${YELLOW}[3b/5] Compilazione di Bento4 (mp4decrypt) da sorgente...${NC_REG}"
+if [ -f "$HOME/.local/bin/binary/mp4decrypt" ]; then
+    echo -e "${GREEN}Bento4 (mp4decrypt) è già compilato e presente.${NC_REG}"
 else
     echo -e "${BLUE}Clonazione e compilazione di Bento4 (axiomatic-systems/Bento4)...${NC_REG}"
     git clone https://github.com/axiomatic-systems/Bento4.git "$HOME/Bento4_src" < /dev/null || {
@@ -115,8 +115,8 @@ else
         exit 1
     }
     mkdir -p "$HOME/.local/bin/binary"
-    cp mp4decrypt mp4dump "$HOME/.local/bin/binary/"
-    chmod +x "$HOME/.local/bin/binary/mp4decrypt" "$HOME/.local/bin/binary/mp4dump"
+    cp mp4decrypt "$HOME/.local/bin/binary/"
+    chmod +x "$HOME/.local/bin/binary/mp4decrypt"
     cd "$HOME" || exit 1
     rm -rf "$HOME/Bento4_src"
     echo -e "${GREEN}Bento4 compilato con successo!${NC_REG}"

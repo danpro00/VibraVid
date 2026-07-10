@@ -11,7 +11,7 @@ from rich.console import Console
 from VibraVid.utils import config_manager, os_manager
 from VibraVid.utils.http_client import get_headers
 from VibraVid.utils.vault_upload.hook import try_fetch
-from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_time
+from VibraVid.core.velora.util.formatting import parse_max_time as _parse_max_time
 from VibraVid.setup import get_wvd_path, get_prd_path
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.ui.ui import build_table
@@ -250,6 +250,7 @@ class DASH_Downloader(BaseDownloader):
         """
         result: Dict[str, List[Dict]] = {DRMType.WIDEVINE: [], DRMType.PLAYREADY: []}
         seen: Dict[str, set] = {DRMType.WIDEVINE: set(), DRMType.PLAYREADY: set()}
+        kid_labels: Dict[str, list] = {}
 
         for s in streams:
             drm = getattr(s, "drm", None)
@@ -297,6 +298,12 @@ class DASH_Downloader(BaseDownloader):
                 dt_added = False
                 for pssh in psshs:
                     for kid in kids:
+                        if kid and kid != "N/A" and label:
+                            kid_norm = kid.replace("-", "").strip().lower()
+                            labels = kid_labels.setdefault(kid_norm, [])
+                            if label not in labels:
+                                labels.append(label)
+
                         dedup_key = (pssh, kid)
                         if dedup_key in seen[dt]:
                             continue
@@ -320,6 +327,16 @@ class DASH_Downloader(BaseDownloader):
                 kid_str = ", ".join(sorted(collected_kids))
                 dt_str = "+".join(collected_dts)
                 logger.info(f"DASH DRM collected from stream: {s.id or 'unnamed'} | type={s.type} | KID={kid_str} | {dt_str}")
+
+        # Merge every selected track's label onto each surviving entry so a key
+        # shared across tracks is stored with the full quality it unlocks
+        # (e.g. "video 2160p + audio IT" instead of only the first track's label).
+        for entries in result.values():
+            for entry in entries:
+                kid_norm = (entry.get("kid") or "").replace("-", "").strip().lower()
+                merged = kid_labels.get(kid_norm)
+                if merged:
+                    entry["label"] = " + ".join(merged)
 
         return result
 

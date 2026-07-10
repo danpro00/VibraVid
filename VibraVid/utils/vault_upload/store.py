@@ -56,7 +56,6 @@ class ExternalUploadVault:
             return None
 
     def upload(self, file_path: str, title: Optional[str] = None, media_type: Optional[str] = None, season: Optional[int] = None, episode: Optional[int] = None, category: Optional[str] = None, expiry_days: Optional[int] = None, on_progress=None) -> Optional[str]:
-        """Encrypt + upload. Returns the link."""
         if not self.base_url or not os.path.isfile(file_path):
             return None
 
@@ -126,7 +125,7 @@ class ExternalUploadVault:
                 return None
 
             client.download_file(self.storage, url, dest_path, client.b64_to_a32(node["key"]), total=info.get("size") or node.get("size"), on_progress=on_progress)
-            logger.info(f"upload store: downloaded {xh} -> {dest_path}")
+            logger.info(f"upload store: downloaded -> {dest_path}")
             return dest_path
         except Exception as e:
             logger.error(f"upload store download error: {e}", exc_info=True)

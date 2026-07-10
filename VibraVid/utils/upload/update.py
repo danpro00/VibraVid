@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 auto_update_check = config_manager.config.get_bool("DEFAULT", "auto_update_check")
 timeout = config_manager.config.get_int("REQUESTS", "timeout")
 
+
 def fetch_github_releases():
     """Fetch releases data from GitHub API (sync)"""
     prefetched = _startup_prefetch.collect("releases", timeout=timeout)
@@ -79,7 +80,7 @@ def auto_update():
         if current_version == latest_version:
             console.print(f"[#06A77D]Already on latest version: {current}")
             return False
-        console.print(f"[#FFD60A]Current: {current} → Latest: {latest.get('name')}")
+        console.print(f"[#FFD60A]Current: {current} -> Latest: {latest.get('name')}")
         
         # Find appropriate asset
         system = binary_paths._detect_system()
@@ -161,6 +162,7 @@ def _fetch_latest_velora_version():
             stripped = line.strip()
             if stripped.startswith("version") and "=" in stripped:
                 return stripped.split("=", 1)[1].strip().strip('"').strip("'")
+        
     except Exception as e:
         logger.debug(f"Failed to fetch latest Velora version: {e}")
     return None
@@ -188,13 +190,16 @@ def _get_local_velora_version(velora_path):
         return None
 
 
-def check_velora_update():
-    """Re-download the Velora binary when it is outdated.
+def _version_tuple(version):
+    """Parse a dotted version string into a comparable tuple of ints, or None."""
+    if not version:
+        return None
+    parts = re.findall(r"\d+", version)
+    return tuple(int(p) for p in parts) if parts else None
 
-    Mirrors the project's own update check: fetch the latest Velora version, compare it
-    against `velora --version`, and if they differ (or the binary reports no version at
-    all) delete the stale binary so the setup checker fetches a fresh one.
-    """
+
+def check_velora_update():
+    """Re-download the Velora binary when it is outdated."""
     latest_version = _fetch_latest_velora_version()
     if not latest_version:
         return
@@ -213,8 +218,12 @@ def check_velora_update():
         return
 
     local_version = _get_local_velora_version(velora_path)
-    if local_version == latest_version:
-        logger.debug(f"Velora is up to date ({local_version})")
+    local_tuple = _version_tuple(local_version)
+    latest_tuple = _version_tuple(latest_version)
+
+    needs_update = local_tuple is None or (latest_tuple is not None and local_tuple < latest_tuple)
+    if not needs_update:
+        logger.debug(f"Velora is up to date (local: {local_version}, latest: {latest_version})")
         return
 
     console.print(f"[#FFD60A]Velora outdated (local: {local_version or 'unknown'} -> latest: {latest_version}), updating...")

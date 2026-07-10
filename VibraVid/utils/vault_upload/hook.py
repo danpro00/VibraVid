@@ -22,8 +22,15 @@ def _enabled() -> bool:
         return True
 
 
+def _can_upload() -> bool:
+    try:
+        token = config_manager.config.get_dict("HOOKS", "db_info", default={}).get("token", "")
+        return bool(token and str(token).strip())
+    except Exception:
+        return False
+
+
 def _meta() -> Tuple[Optional[str], str, int, int]:
-    """(title, media_type, season, episode) from the current download context."""
     title = context_tracker.title
     media_type = context_tracker.media_type or "Film"
     season = context_tracker.season or 0
@@ -35,7 +42,6 @@ def _meta() -> Tuple[Optional[str], str, int, int]:
 
 
 def _run_with_bar(label: str, run):
-    """Run *run(on_progress)* showing a DownloadBarManager bar (skipped in GUI)."""
     if getattr(context_tracker, "is_gui", False):
         return run(None)
 
@@ -60,7 +66,6 @@ def _run_with_bar(label: str, run):
 
 
 def try_fetch(output_path: str) -> bool:
-    """Return True if the finished file was pulled from the store into output_path."""
     if not _enabled() or not output_path:
         return False
     
@@ -88,11 +93,13 @@ def try_fetch(output_path: str) -> bool:
 
 
 def upload_after(output_path: str) -> None:
-    """Upload the finished file to the store and register it (synchronous: the CLI
-    force-exits right after, so a background thread would be torn down mid-upload)."""
     if not _enabled() or not output_path:
         return
-    
+
+    if not _can_upload():
+        logger.debug("upload-store: no token configured, download-only mode (upload skipped)")
+        return
+
     title, media_type, season, episode = _meta()
     if not title:
         return
@@ -102,8 +109,9 @@ def upload_after(output_path: str) -> None:
             return
         
         print()
+        category = "live" if str(media_type).lower() == "live" else None
         _run_with_bar("[green]Cache[/green] [cyan]Uploading[/cyan]", lambda cb: upload_vault.upload(
-                output_path, title=title, media_type=media_type,
+                output_path, title=title, media_type=media_type, category=category,
                 season=season or None, episode=episode or None, on_progress=cb,
             ),
         )

@@ -1,13 +1,14 @@
 # 13.03.26
 
-import math
 import re
+import time
+import math
 import logging
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
-from urllib.parse import urljoin, urlparse, urlunparse, parse_qsl, urlencode
+from urllib.parse import urljoin, urlparse, parse_qsl, urlencode
 
 from rich.console import Console
 
@@ -16,7 +17,7 @@ from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.core.manifest.stream import DRMInfo, Segment, Stream, DRMType
 from VibraVid.core.utils.language import resolve_locale
 from VibraVid.core.utils.codec import DV_CODEC_PREFIXES, detect_stream_type, get_codec_extension, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS
-from VibraVid.core.manifest._utils import calc_base_url, save_raw_manifest
+from VibraVid.core.manifest._utils import calc_base_url, save_raw_manifest, is_simple_relative_ref, fast_urljoin, fast_urljoin_auto
 
 
 console = Console()
@@ -161,6 +162,7 @@ class DashParser:
         self._root: Optional[ET.Element] = None
         self._base_url = self._calc_base_url(mpd_url)
         self._mpd_query: str = urlparse(mpd_url).query if mpd_url else ""
+        self._mpd_query_suffix: str = self._compute_query_suffix(self._mpd_query)
         self._uses_range_split: bool = False
         self._manifest_is_live: bool = False
 
@@ -174,36 +176,42 @@ class DashParser:
     })
 
     @classmethod
-    def _inherit_query(cls, segment_url: str, source_query: str) -> str:
+    def _compute_query_suffix(cls, source_query: str) -> str:
         """
-        Append *source_query* to *segment_url* if the segment has no query string of its own.
-        This propagates auth tokens (e.g. dazn-token) from the MPD URL to every generated segment URL.
-        """
+        Resolve *source_query* (the MPD URL's own query string) into the
+        exact suffix that should be appended to segment URLs lacking their
+        own query"""
         if not source_query:
-            return segment_url
-        p = urlparse(segment_url)
-        if p.query:
-            # Segment already has its own query — do not touch it
-            return segment_url
+            return ""
 
-        filtered = [
-            (k, v) for k, v in parse_qsl(source_query, keep_blank_values=True)
-            if k.lower() not in cls._MANIFEST_ONLY_QUERY_KEYS
-        ]
+        all_pairs = parse_qsl(source_query, keep_blank_values=True)
+        filtered = [(k, v) for k, v in all_pairs if k.lower() not in cls._MANIFEST_ONLY_QUERY_KEYS]
         if not filtered:
-            return segment_url
+            return ""
 
         # Preserve the original raw encoding when no key was stripped
-        if len(filtered) == len(parse_qsl(source_query, keep_blank_values=True)):
-            return urlunparse(p._replace(query=source_query))
-        return urlunparse(p._replace(query=urlencode(filtered)))
+        if len(filtered) == len(all_pairs):
+            return source_query
+        return urlencode(filtered)
+
+    @staticmethod
+    def _inherit_query(segment_url: str, query_suffix: str) -> str:
+        """Append the precomputed *query_suffix* (see ``_compute_query_suffix``)"""
+        if not query_suffix:
+            return segment_url
+        if "?" in segment_url:
+            return segment_url
+        return f"{segment_url}?{query_suffix}"
 
     def fetch_manifest(self) -> bool:
+        start_parsing_time = time.time()
+
         if self._injected:
             self.raw_content = self._injected
             try:
                 self._root = ET.fromstring(self.raw_content)
                 self._resolve_base_url()
+                logger.info(f"DashParser: injected XML parsed in {time.time() - start_parsing_time:.2f}s")
                 return True
             except ET.ParseError as exc:
                 logger.error(f"DashParser: injected XML parse error: {exc}")
@@ -217,6 +225,7 @@ class DashParser:
                 self._base_url = local_path.parent.as_uri() + "/"
                 self._root = ET.fromstring(self.raw_content)
                 self._resolve_base_url()
+                logger.info(f"DashParser: local file read and parsed successfully in {time.time() - start_parsing_time:.2f}s")
                 return True
             except Exception as exc:
                 console.print(f"[red]Failed to read local DASH manifest: {exc}.")
@@ -233,6 +242,7 @@ class DashParser:
                 self.raw_content = r.text
             self._root = ET.fromstring(self.raw_content)
             self._resolve_base_url()
+            logger.info(f"DashParser: fetched and parsed MPD in {time.time() - start_parsing_time:.2f}s")
             return True
         except Exception as exc:
             console.print(f"[red]Error fetching/parsing MPD manifest: {exc}[/red]")
@@ -745,19 +755,21 @@ class DashParser:
                 time_value=start_time,
             )
             stream.add_segment(Segment(
-                self._inherit_query(urljoin(base_url, init_url), self._mpd_query), 0, "init"
+                self._inherit_query(urljoin(base_url, init_url), self._mpd_query_suffix), 0, "init"
             ))
 
         timeline = tmpl.find(".//mpd:SegmentTimeline", _NS)
         if timeline is not None:
             seg_num = start_num
             current_time = start_time
+            ref_is_simple = is_simple_relative_ref(media_tpl)
+
             for s_el in timeline.findall("mpd:S", _NS):
                 t = s_el.get("t")
 
                 if t is not None:
                     current_time = int(t)
-                
+
                 d = int(s_el.get("d", 0))
                 r = int(s_el.get("r", 0))
 
@@ -772,11 +784,11 @@ class DashParser:
                     )
 
                     stream.add_segment(Segment(
-                        self._inherit_query(urljoin(base_url, seg_url), self._mpd_query), seg_num, "media", duration=seg_dur_s
+                        self._inherit_query(fast_urljoin(base_url, seg_url, ref_is_simple), self._mpd_query_suffix), seg_num, "media", duration=seg_dur_s
                     ))
                     current_time += d
                     seg_num += 1
-            
+
         elif "$Number" in media_tpl:
             seg_duration = int(tmpl.get("duration", 0))
             if seg_duration <= 0:
@@ -795,10 +807,11 @@ class DashParser:
                 number_iter = range(start_num, start_num + total_segments)
 
             seg_dur_s = seg_duration / timescale if timescale > 0 else 0.0
+            ref_is_simple = is_simple_relative_ref(media_tpl)
             for i in number_iter:
                 seg_url = self._expand_segment_template_tokens(media_tpl, rep_id, bandwidth, number=i)
                 stream.add_segment(Segment(
-                    self._inherit_query(urljoin(base_url, seg_url), self._mpd_query), i, "media",
+                    self._inherit_query(fast_urljoin(base_url, seg_url, ref_is_simple), self._mpd_query_suffix), i, "media",
                     duration=seg_dur_s,
                 ))
         
@@ -852,7 +865,7 @@ class DashParser:
         if init_el is not None:
             src = init_el.get("sourceURL", "")
             if src:
-                stream.add_segment(Segment(self._inherit_query(urljoin(base_url, src), self._mpd_query), 0, "init"))
+                stream.add_segment(Segment(self._inherit_query(urljoin(base_url, src), self._mpd_query_suffix), 0, "init"))
             else:
                 init_range = init_el.get("range", "")
                 if init_range:
@@ -862,16 +875,16 @@ class DashParser:
                     parts = init_range.split("-")
                     if len(parts) == 2 and parts[1].isdigit() and first_media_start is not None and int(parts[1]) + 1 < first_media_start:
                         init_range = f"{parts[0]}-{first_media_start - 1}"
-                    stream.add_segment(Segment(self._inherit_query(base_url.rstrip("/"), self._mpd_query), 0, "init", byte_range=init_range))
+                    stream.add_segment(Segment(self._inherit_query(base_url.rstrip("/"), self._mpd_query_suffix), 0, "init", byte_range=init_range))
 
         for idx, seg_el in enumerate(seg_urls, start=1):
             media_url = seg_el.get("media", "")
             if media_url:
-                stream.add_segment(Segment(self._inherit_query(urljoin(base_url, media_url), self._mpd_query), idx, "media"))
+                stream.add_segment(Segment(self._inherit_query(fast_urljoin_auto(base_url, media_url), self._mpd_query_suffix), idx, "media"))
             else:
                 media_range = seg_el.get("mediaRange", "")
                 if media_range:
-                    stream.add_segment(Segment(self._inherit_query(base_url.rstrip("/"), self._mpd_query), idx, "media", byte_range=media_range))
+                    stream.add_segment(Segment(self._inherit_query(base_url.rstrip("/"), self._mpd_query_suffix), idx, "media", byte_range=media_range))
 
     @staticmethod
     def _parse_iso_duration(s: str) -> float:

@@ -13,9 +13,9 @@ from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
 
-from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_time
+from VibraVid.core.velora.util.formatting import parse_max_time as _parse_max_time
 from VibraVid.core.velora.downloader import MediaDownloader
-from VibraVid.core.velora._stream_helpers import join_interruptible
+from VibraVid.core.velora.util._stream_helpers import join_interruptible
 
 from VibraVid.core.decryptor.keys_manager import KeysManager
 from VibraVid.core.utils.selector import StreamSelector, StreamSelectorFormatter

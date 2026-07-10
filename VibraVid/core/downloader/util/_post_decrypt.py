@@ -31,7 +31,7 @@ class PostDownloadDecryptor:
 
     def run(self, path: str, key: Any, download_id: Optional[str] = None) -> None:
         """Decrypt *path* in-place.  Logs and prints errors but never raises."""
-        logger.info(f"PostDownloadDecryptor: probing {os.path.basename(path)} …")
+        logger.info(f"PostDownloadDecryptor: probing {os.path.basename(path)} ...")
         if download_id:
             download_tracker.update_status(download_id, "Decrypting ...")
 
@@ -61,7 +61,7 @@ class PostDownloadDecryptor:
             if ok and os.path.exists(dec_path) and os.path.getsize(dec_path) > 0:
                 try:
                     os.replace(dec_path, path)
-                    logger.info(f"PostDownloadDecryptor: success → {os.path.basename(path)}")
+                    logger.info(f"PostDownloadDecryptor: success -> {os.path.basename(path)}")
                 except Exception as exc:
                     logger.error(f"PostDownloadDecryptor: rename failed — {exc}")
                     console.print(f"[red]Decryption rename failed: {exc}")
@@ -79,6 +79,7 @@ class PostDownloadDecryptor:
 
     @staticmethod
     def _remove(path: str) -> None:
+        """Remove *path* if it exists, ignoring errors."""
         try:
             if os.path.exists(path):
                 os.remove(path)

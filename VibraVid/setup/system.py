@@ -3,7 +3,7 @@
 import sys
 import threading
 
-from .checker import check_bento4, check_mp4dump, check_ffmpeg, check_shaka_packager, check_dovi_tool, check_mkvmerge, check_mkvpropedit, check_velora
+from .checker import check_bento4, check_ffmpeg, check_shaka_packager, check_dovi_tool, check_mkvmerge, check_mkvpropedit, check_velora
 from .device_install import check_device_wvd_path, check_device_prd_path
 
 
@@ -11,7 +11,6 @@ is_binary_installation = getattr(sys, 'frozen', False)
 _ffmpeg_path = None
 _ffprobe_path = None
 _bento4_decrypt_path = None
-_mp4dump_path = None
 _wvd_path = None
 _prd_path = None
 _velora_path = None
@@ -31,7 +30,7 @@ def _initialize_paths():
     - After the first initialization, every getter returns instantly with zero locking overhead (outer ``if _initialized`` check).
     - During the first initialization, only one thread runs the checks
     """
-    global _ffmpeg_path, _ffprobe_path, _bento4_decrypt_path, _mp4dump_path
+    global _ffmpeg_path, _ffprobe_path, _bento4_decrypt_path
     global _wvd_path, _prd_path, _velora_path, _shaka_packager_path
     global _dovi_tool_path, _mkvmerge_path, _mkvpropedit_path
     global _initialized
@@ -47,7 +46,6 @@ def _initialize_paths():
 
         _ffmpeg_path, _ffprobe_path = check_ffmpeg()
         _bento4_decrypt_path = check_bento4()
-        _mp4dump_path = check_mp4dump()
         _wvd_path = check_device_wvd_path()
         _prd_path = check_device_prd_path()
         _velora_path = check_velora()
@@ -75,11 +73,6 @@ def get_bento4_decrypt_path() -> str:
     if not _initialized:
         _initialize_paths()
     return _bento4_decrypt_path
-
-def get_mp4dump_path() -> str:
-    if not _initialized:
-        _initialize_paths()
-    return _mp4dump_path
 
 def get_wvd_path() -> str:
     if not _initialized:

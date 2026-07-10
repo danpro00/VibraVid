@@ -23,10 +23,10 @@ from VibraVid.core.ui.progress_bar import CustomBarColumn
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
 
-from ._interrupt import InterruptHandler
-from ._drm_probe import DRMProbe, PROBE_BYTES
-from ._post_decrypt import PostDownloadDecryptor
-from ._supa_tracker import SupaTracker
+from .util._interrupt import InterruptHandler
+from .util._drm_probe import DRMProbe, PROBE_BYTES
+from .util._post_decrypt import PostDownloadDecryptor
+from .util._supa_tracker import SupaTracker
 
 
 console = Console()
@@ -175,7 +175,7 @@ class MP4FileDownloader:
         if "text/html" not in content_type and "application/json" not in content_type:
             return True  # looks like a binary/media response → proceed
 
-        logger.error("HEAD indicates non-video content type; inspecting body …")
+        logger.error("HEAD indicates non-video content type; inspecting body")
         try:
             resp = client.get(self.url)
             resp.raise_for_status()

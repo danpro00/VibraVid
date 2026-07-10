@@ -2,6 +2,7 @@
 
 import re
 import logging
+import threading
 from typing import Dict, List, Optional, Tuple
 
 from VibraVid.services._base.object import SeasonManager, Episode, Season
@@ -79,6 +80,7 @@ class GetSerieInfo:
         """Initialize series scraper with minimal API calls."""
         self.series_id = series_id
         self.seasons_manager = SeasonManager()
+        self._collect_lock = threading.Lock()
         self.client = CrunchyrollClient(locale=locale)
         
         self.params = {
@@ -245,20 +247,23 @@ class GetSerieInfo:
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
         """Get total number of seasons."""
-        if not self.seasons_manager.seasons:
-            self.collect_season()
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_season()
         return len(self.seasons_manager.seasons)
 
     def getEpisodeSeasons(self, season_number: int) -> List[Episode]:
         """Get all episodes for a season."""
-        if not self.seasons_manager.seasons:
-            self.collect_season()
-        
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_season()
+
         season = self.seasons_manager.get_season_by_number(season_number)
         if not season:
             return []
 
-        if not season.episodes.episodes:
-            self._fetch_episodes_for_season(season_number)
-        
+        with self._collect_lock:
+            if not season.episodes.episodes:
+                self._fetch_episodes_for_season(season_number)
+
         return season.episodes.episodes

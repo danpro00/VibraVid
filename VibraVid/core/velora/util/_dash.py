@@ -3,6 +3,8 @@
 import logging
 from typing import Dict, List, Tuple
 
+from VibraVid.utils.http_client import create_client
+
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +31,6 @@ def build_dash_ranged_segments(media_url: str, headers: Dict, chunk_size: int, r
     Returns an empty list when Range-download is not applicable or on any
     network/HTTP error (caller falls back to a single-segment download).
     """
-    from VibraVid.utils.http_client import create_client
-
     try:
         content_len = 0
         accept_ranges = ""

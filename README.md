@@ -91,8 +91,8 @@ vibravid
 
 ### Additional Documentation
 
-- 📝 [Login Guide](.github/doc/login.md) — Authentication for supported services
-- 🖥️ [NAS Deployment Guide](docs/NAS.md) — Docker setup on Synology, TrueNAS, and other NAS devices
+- 📝 [Login Guide](.github/docs/en/login.md) — Authentication for supported services
+- 🖥️ [NAS Deployment Guide](.github/docs/en/nas.md) — Docker setup on Synology, TrueNAS, and other NAS devices
 
 ---
 
@@ -246,8 +246,8 @@ All settings live in `config.json`. The sections below cover each configuration 
 **`movie_folder_name`**, **`serie_folder_name`**, **`anime_folder_name`** — Subfolder names for each content type (defaults: `"Movie"`, `"Serie"`, `"Anime"`). All support the `%{site_name}` placeholder:
 
 ```
-"Movie/%{site_name}"  →  "Movie/Crunchyroll"
-"Serie/%{site_name}"  →  "Serie/Crunchyroll"
+"Movie/%{site_name}"  ->  "Movie/Crunchyroll"
+"Serie/%{site_name}"  ->  "Serie/Crunchyroll"
 ```
 
 ---
@@ -257,8 +257,8 @@ All settings live in `config.json`. The sections below cover each configuration 
 **Default:** `"%(title_name) (%(title_year))/%(title_name) (%(title_year))"`
 
 ```
-%(title_name) (%(title_year))/   →  folder    Inception (2010)/
-%(title_name) (%(title_year))    →  filename  Inception (2010).mkv
+%(title_name) (%(title_year))/   ->  folder    Inception (2010)/
+%(title_name) (%(title_year))    ->  filename  Inception (2010).mkv
 ```
 
 | Variable | Description |
@@ -282,9 +282,9 @@ All settings live in `config.json`. The sections below cover each configuration 
 **Default:** `"%(series_name)/S%(season:02d)/%(episode_name) S%(season:02d)E%(episode:02d)"`
 
 ```
-%(series_name)/     →  series folder   Breaking Bad/
-S%(season:02d)/     →  season folder   S01/
-%(episode_name)...  →  filename        Pilot S01E05.mkv
+%(series_name)/     ->  series folder   Breaking Bad/
+S%(season:02d)/     ->  season folder   S01/
+%(episode_name)...  ->  filename        Pilot S01E05.mkv
 ```
 
 | Variable | Description |
@@ -327,6 +327,8 @@ S%(season:02d)/     →  season folder   S01/
     "delay_after_download": 1,
     "skip_download": false,
     "thread_count": 12,
+    "decrypt_worker_count": 12,
+    "realtime_decrypt": true,
     "concurrent_download": true,
     "select_video": "1920",
     "select_audio": "ita|Ita",
@@ -345,6 +347,8 @@ S%(season:02d)/     →  season folder   S01/
 | `delay_after_download` | `1` | Delay (seconds) applied after each movie or episode download |
 | `skip_download` | `false` | Skip the download step and process existing files |
 | `thread_count` | `12` | Number of concurrent segment requests for a single stream |
+| `decrypt_worker_count` | `THREAD_COUNT` | Number of segments decrypted in parallel when `realtime_decrypt` is `true`.
+| `realtime_decrypt` | `true` | Decrypt each segment as it downloads (in-flight) instead of decrypting the whole file once after merging.
 | `concurrent_download` | `true` | Download video, audio, and subtitles simultaneously |
 | `cleanup_tmp_folder` | `true` | Remove temporary files after download |
 | `engine` | `"ffmpeg"` | Muxing engine used to combine video, audio and subtitle tracks. `ffmpeg`, `mkvmerge` requires a **full installation** |
@@ -458,6 +462,7 @@ See `VibraVid/core/processors/helper/ex_sub.py` for conversion logic.
     "timeout": 30,
     "max_retry": 10,
     "use_proxy": false,
+    "proxy_scope": "scrap+down",
     "proxy": {
       "http": "http://localhost:8888",
       "https": "http://localhost:8888"
@@ -471,8 +476,26 @@ See `VibraVid/core/processors/helper/ex_sub.py` for conversion logic.
 | `timeout` | `30` | Request timeout in seconds |
 | `max_retry` | `10` | Maximum retry attempts for failed requests |
 | `use_proxy` | `false` | Enable proxy support for HTTP requests |
-| `proxy.http` | — | HTTP proxy URL |
-| `proxy.https` | — | HTTPS proxy URL |
+| `proxy_scope` | `scrap+down` | Where the proxy is applied: `scrap`, `down`, or `scrap+down` (see below) |
+| `proxy.http` | — | Proxy URL for HTTP targets |
+| `proxy.https` | — | Proxy URL for HTTPS targets |
+
+> **Proxy scope** — when `use_proxy` is `true`, `proxy_scope` decides *which* traffic goes through the proxy:
+> | Value | Effect |
+> |-------|--------|
+> | `scrap` | Only VibraVid's own HTTP client (search, metadata, manifests, DRM licenses) |
+> | `down` | Only the Velora download engine (media/subtitle segment downloads) |
+> | `scrap+down` | Both (default) |
+>
+> Any invalid value falls back to `scrap+down`. Override per run from the CLI with `--proxy-scope scrap|down|scrap+down`.
+
+> **SOCKS5 support** — the `http`/`https` keys refer to the **target** URL scheme, not the proxy protocol. The value can be an HTTP **or** a SOCKS5 proxy URL. Use `socks5h://` (with the `h`) to resolve DNS through the proxy — recommended for geo-restricted sites and to avoid DNS leaks. Authentication is supported via `user:pass@`.
+>
+> ```json
+> "proxy": {
+>   "http":  "socks5h://localhost:1080",
+>   "https": "socks5h://user:pass@localhost:1080"
+> }
 
 ---
 
@@ -534,7 +557,7 @@ The `ARR` block enables VibraVid to work as an automation layer between **Seerr/
 | `sonarr_webhook.webhook_secret` | — | Secret expected in Sonarr webhook requests |
 | `radarr_webhook.webhook_secret` | — | Secret expected in Radarr webhook requests |
 
-> All ARR settings can also be edited directly from the VibraVid web GUI under **Settings → Configuration editor**, without touching `config.json` manually.
+> All ARR settings can also be edited directly from the VibraVid web GUI under **Settings -> Configuration editor**, without touching `config.json` manually.
 
 These keys can also be set via environment variables (useful in Docker):
 
@@ -553,7 +576,7 @@ RADARR_WEBHOOK_SECRET=your-secret
 
 VibraVid exposes one webhook endpoint per ARR application. Add **one connection only** per app — adding multiple webhooks for the same app causes duplicate processing.
 
-**Radarr** → Settings → Connect → Webhook
+**Radarr** -> Settings -> Connect -> Webhook
 
 | Field | Value |
 |-------|-------|
@@ -561,7 +584,7 @@ VibraVid exposes one webhook endpoint per ARR application. Add **one connection 
 | Triggers | On Movie Added, On Movie File Delete |
 | Secret | any value mirrored in `radarr_webhook.webhook_secret` |
 
-**Sonarr** → Settings → Connect → Webhook
+**Sonarr** -> Settings -> Connect -> Webhook
 
 | Field | Value |
 |-------|-------|
@@ -585,14 +608,14 @@ VibraVid determines which provider to use for each item through two mechanisms �
 
 Add a tag directly to the movie or series in Sonarr/Radarr using the format `provider-<site>`. VibraVid reads the tag at download time and uses that provider regardless of the fallback list. This is useful when specific titles are only available on a particular service.
 
-Tags are created in Sonarr/Radarr under Settings → Tags, then assigned to individual series or movies from their edit page.
+Tags are created in Sonarr/Radarr under Settings -> Tags, then assigned to individual series or movies from their edit page.
 
 | Tag | Behaviour |
 |-----|-----------|
 | `provider-animeunity` | Uses AnimeUnity for that title |
 | `provider-<site>` | Uses any supported VibraVid site for that title |
 | `hold` / `pausa` | Skips the item until the tag is removed |
-| `skip-s1`, `skip-s2`, … | Skips a specific season of a series |
+| `skip-s1`, `skip-s2`, ... | Skips a specific season of a series |
 
 **Method 2 — Global fallback list (recommended, zero per-title configuration)**
 
@@ -759,8 +782,17 @@ python manual.py --site streamingcommunity --search "interstellar"
 # Auto-download the first result
 python manual.py --site streamingcommunity --search "interstellar" --auto-first
 
+# Select a specific result by index (0-based) instead of the first
+python manual.py --site streamingcommunity --search "interstellar" --item 2
+
 # Use a site by its index number
 python manual.py --site 0 --search "interstellar"
+
+# Skip TS/CAM releases (StreamingCommunity only)
+python manual.py --site streamingcommunity --search "interstellar" --skip-ts
+
+# Disable the log file for this run
+python manual.py --site streamingcommunity --search "interstellar" --no-log
 ```
 
 ### Series Selection
@@ -820,13 +852,39 @@ python manual.py --site streamingcommunity --search "interstellar" --close-conso
 ### Proxy
 
 ```bash
+# Use the configured proxy for everything (default scope)
 python manual.py --site streamingcommunity --search "interstellar" --use_proxy
+
+# Proxy only the downloads (Velora), scrape directly
+python manual.py --site streamingcommunity --search "interstellar" --use_proxy --proxy-scope down
+
+# Proxy only the scraping, download directly
+python manual.py --site streamingcommunity --search "interstellar" --use_proxy --proxy-scope scrap
 ```
 
 ### Show Dependency Paths
 
 ```bash
 python manual.py --dep
+```
+
+### Direct Download by URL (`--down`)
+
+Download a stream directly from its URL, bypassing site search entirely. The stream type is
+auto-detected (MP4 / HLS / DASH / ISM) or can be forced with `--type`.
+
+```bash
+# Simple MP4 / auto-detected stream
+python manual.py --down "https://example.com/video.mp4" -o "./Video/clip.mp4"
+
+# HLS with a known decryption key
+python manual.py --down "https://example.com/master.m3u8" --type hls \
+  --key "<KID>:<KEY>" -o "./Video/movie.mkv"
+
+# DASH with a DRM license server (Widevine)
+python manual.py --down "https://example.com/manifest.mpd" --type dash \
+  --license-url "https://example.com/wv/license" --drm widevine \
+  --headers "Authorization: Bearer <token>" -o "./Video/movie.mkv"
 ```
 
 ---
@@ -841,6 +899,7 @@ python manual.py --global -s "cars"
 python manual.py --category 1    # Anime
 python manual.py --category 2    # Movies & Series
 python manual.py --category 3    # Series only
+python manual.py --category 4    # Movies only
 ```
 
 ---
@@ -1041,7 +1100,7 @@ docker-compose logs -f      # View logs
 docker-compose down         # Stop (data persists)
 ```
 
-For NAS users (Synology, TrueNAS, Unraid, etc.), see **[docs/NAS.md](docs/NAS.md)** for a step-by-step setup guide including bind mounts and permission configuration.
+For NAS users (Synology, TrueNAS, Unraid, etc.), see the **[NAS deployment guide](.github/docs/en/nas.md)** for a step-by-step setup guide including bind mounts and permission configuration.
 
 ### Custom paths and ports
 

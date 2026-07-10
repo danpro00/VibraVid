@@ -2,6 +2,7 @@
 # by @nu00
 
 import logging
+import threading
 
 from VibraVid.services._base.object import SeasonManager, Season, Episode, EpisodeManager
 from VibraVid.provider.tmdb import tmdb_client
@@ -21,8 +22,13 @@ class GetSerieInfo:
         self.series_year = None
         self.seasons_manager = SeasonManager()
         self._loaded = False
+        self._load_lock = threading.Lock()
 
     def _load(self):
+        with self._load_lock:
+            self._load_locked()
+
+    def _load_locked(self):
         if self._loaded:
             return
         self._loaded = True
@@ -53,10 +59,12 @@ class GetSerieInfo:
             logger.error(f"[Cinezo] TMDB series load failed: {e}")
 
     def getNumberSeason(self) -> int:
+        """Get the total number of seasons available for the series."""
         self._load()
         return len(self.seasons_manager.seasons)
 
     def getEpisodeSeasons(self, season_number: int) -> list:
+        """Get all episodes for a specific season."""
         self._load()
         season = self.seasons_manager.get_season_by_number(season_number)
 

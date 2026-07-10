@@ -16,7 +16,7 @@ console = Console()
 msg = Prompt()
 logger = logging.getLogger(__name__)
 available_colors = ['red', 'magenta', 'yellow', 'cyan', 'green', 'blue', 'white']
-column_to_hide = ['Slug', 'Sub_ita', 'First_air_date', 'Seasons_count', 'Url', 'Image', 'Path_id', 'Score']
+column_to_hide = ['Slug', 'Sub_ita', 'First_air_date', 'Seasons_count', 'Url', 'Image', 'Path_id', 'Score', 'Edit_id']
 
 
 def _apply_year_filter(media_search_manager: EntriesManager, year_filter: str) -> int:

@@ -2,6 +2,8 @@
 
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from bs4 import BeautifulSoup
 
@@ -30,6 +32,7 @@ class GetSerieInfo:
         self.year = year
         self.seasons_manager = SeasonManager()
         self.provider_language = provider_language
+        self._collect_lock = threading.Lock()
         if isinstance(self.url, str) and self.url.endswith(('/it', '/en')):
             self.base_url = self.url.rsplit('/', 1)[0]
         else:
@@ -127,7 +130,8 @@ class GetSerieInfo:
             episodes_by_lang = {}
             include_language = True
 
-            for lang in ['it', 'en']:
+            def _fetch_lang_episodes(lang: str) -> list:
+                """Fetch the episode list for a single language catalog. Returns [] on any failure."""
                 try:
                     logger.info(f"Fetching episodes for season {number_season} in language '{lang}'")
                     with create_client(headers=self.headers) as client:
@@ -137,7 +141,7 @@ class GetSerieInfo:
                     ver = json.loads(ver.find("div", {"id": "app"}).get("data-page"))['version']
                 except Exception:
                     # Skip this language if we can't get version
-                    continue
+                    return []
 
                 custom_headers = self.headers.copy()
                 custom_headers.update({
@@ -148,13 +152,18 @@ class GetSerieInfo:
                 try:
                     response = client.get(f"{self.base_url}/{lang}/titles/{self.media_id}-{self.series_name}/season-{number_season}")
                     response.raise_for_status()
-                    json_response = response.json().get('props', {}).get('loadedSeason', {}).get('episodes', [])
+                    return response.json().get('props', {}).get('loadedSeason', {}).get('episodes', [])
                 except Exception as e:
                     logger.debug(f"No season data for lang {lang}: {e}")
-                    json_response = []
+                    return []
                 finally:
                     client.close()
 
+            # Fetch episodes for both Italian and English catalogs in parallel
+            langs = ['it', 'en']
+            with ThreadPoolExecutor(max_workers=len(langs)) as pool:
+                results = list(pool.map(_fetch_lang_episodes, langs))
+            for lang, json_response in zip(langs, results):
                 episodes_by_lang[lang] = json_response
 
             # Merge episodes from both languages
@@ -205,25 +214,23 @@ class GetSerieInfo:
     
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
-        """
-        Get the total number of seasons available for the series.
-        """
-        if not self.seasons_manager.seasons:
-            self.collect_info_title()
-            
+        """Get the total number of seasons available for the series."""
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_info_title()
+
         return len(self.seasons_manager.seasons)
-    
+
     def getEpisodeSeasons(self, season_number: int) -> list:
-        """
-        Get all episodes for a specific season.
-        """
+        """Get all episodes for a specific season."""
         season = self.seasons_manager.get_season_by_number(season_number)
 
         if not season:
             logger.error(f"Season {season_number} not found")
             return []
-            
-        if not season.episodes.episodes:
-            self.collect_info_season(season_number)
-        
+
+        with self._collect_lock:
+            if not season.episodes.episodes:
+                self.collect_info_season(season_number)
+
         return season.episodes.episodes

@@ -23,6 +23,7 @@ class TMDBClient:
         self.api_key = api_key
         self.base_url = "https://api.themoviedb.org/3"
         self._cache: dict = {}
+        self._warned_no_api_key = False
 
     def _make_request(self, endpoint, params=None, retries=3):
         """Make a request to the given API endpoint with optional parameters."""
@@ -30,7 +31,9 @@ class TMDBClient:
             params = {}
 
         if self.api_key is None or self.api_key == "":
-            logger.error("TMDB API key is not set. Please provide a valid API key.")
+            if not self._warned_no_api_key:
+                logger.error("TMDB API key is not set. Please provide a valid API key.")
+                self._warned_no_api_key = True
             return {}
 
         params['api_key'] = self.api_key
@@ -87,44 +90,42 @@ class TMDBClient:
             movie_results = self._make_request("search/movie", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
             logger.info(f"Found {len(movie_results)} movie results for slug '{slug}' and year '{year}'")
 
-            if len(movie_results) == 1:
-                return {'type': "movie", 'id': movie_results[0]['id']}
-            
             for movie in movie_results:
                 title = movie.get('title')
                 release_date = movie.get('release_date')
-                
+
                 if release_date:
                     movie_year = int(release_date[:4])
                 else:
                     continue
-                
+
                 movie_slug = self._slugify(title)
-                
+
                 if self._slugs_match(movie_slug, slug) and (not year or movie_year == year):
                     return {'type': "movie", 'id': movie['id']}
-        
+
+            logger.info(f"No movie result matched slug '{slug}' and year '{year}'")
+
         elif media_type == "tv":
             tv_results = self._make_request("search/tv", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
             logger.info(f"Found {len(tv_results)} TV results for slug '{slug}' and year '{year}'")
 
-            if len(tv_results) == 1:
-                return {'type': "tv", 'id': tv_results[0]['id']}
-            
             for show in tv_results:
                 name = show.get('name')
                 first_air_date = show.get('first_air_date')
-                
+
                 if first_air_date:
                     show_year = int(first_air_date[:4])
                 else:
                     continue
-                
+
                 show_slug = self._slugify(name)
-                
+
                 if self._slugs_match(show_slug, slug) and (not year or show_year == year):
                     return {'type': "tv", 'id': show['id']}
-                
+
+            logger.info(f"No TV result matched slug '{slug}' and year '{year}'")
+
         else:
             print("Media type not specified. Searching both movie and tv.")
             return None

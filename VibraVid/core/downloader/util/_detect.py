@@ -51,10 +51,7 @@ def detect_stream_type(url: str) -> str:
 
 
 def parse_headers(headers_list: Optional[list]) -> dict:
-    """
-    Convert ['Key: Value', 'Key2:Value2', ...] into a plain dict.
-    Both 'Key: Value' and 'Key:Value' are accepted.
-    """
+    """Convert ['Key: Value', 'Key2:Value2', ...] into a plain dict."""
     result = {}
     for entry in (headers_list or []):
         if ':' in entry:
@@ -75,10 +72,7 @@ def parse_keys(key_list: Optional[list]) -> Optional[list]:
 
 
 def derive_output_path(url: str, output: Optional[str], extension: str) -> str:
-    """
-    Build a final output path: derive a stem from the URL when *output* is empty,
-    and append the configured *extension* when no suffix is present.
-    """
+    """Build a final output path: derive a stem from the URL when *output* is empty, and append the configured *extension* when no suffix is present."""
     output = (output or "").strip()
     if not output:
         url_path = urlparse(url).path.rstrip('/')

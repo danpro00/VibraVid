@@ -17,14 +17,29 @@ from VibraVid.core.decryptor import KeysManager
 console = Console()
 logger = logging.getLogger("manual")
 
+_SEGMENT_EXTENSIONS = (
+    "mp4", "m4s", "m4v", "m4a", "m4i", "m4f",   # ISO-BMFF / fragmented-MP4 (incl. EXT-X-MAP init .m4i)
+    "cmfv", "cmfa", "cmft", "cmfs",             # CMAF
+    "m2ts", "ts",                               # MPEG-TS
+    "aac", "ac3", "ec3", "mp3", "mov", "webm",  # other media containers
+    "vtt", "srt", "ttml", "dfxp", "ass", "ssa", # subtitles
+)
+_FMP4_MERGED_AS_MP4 = frozenset({"m4s", "m4v", "m4i", "m4f", "cmfv"})
+
 
 def detect_seg_ext(url: str, default: str = "ts") -> str:
     """Detect the media-segment container format from a URL path."""
     path = url.split("?")[0].lower()
-    for ext in ("mp4", "m4s", "m4v", "m4a", "ts", "aac", "webm", "vtt", "srt"):
+    for ext in _SEGMENT_EXTENSIONS:
         if path.endswith(f".{ext}"):
             return ext
     return default
+
+
+def merged_segment_ext(sample_url: str, default: str = "ts") -> str:
+    """Container extension for a merged (concatenated) segment file."""
+    ext = detect_seg_ext(sample_url, default=default)
+    return "mp4" if ext in _FMP4_MERGED_AS_MP4 else ext
 
 
 def safe_name(s: str, maxlen: int = 32) -> str:
@@ -86,7 +101,7 @@ def collect_failed_segments(dl_segs: list, downloaded_paths: list, stream_dir, d
         seg_ext = detect_seg_ext(seg.get("url", ""), default=default_ext)
         if seg_ext == "m4s":
             seg_ext = "mp4"
-        
+
         expected_path = Path(stream_dir) / f"seg_{seg['number']:05d}.{seg_ext}"
         key = str(expected_path.resolve()).casefold()
         if key not in downloaded_set:

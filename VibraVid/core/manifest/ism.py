@@ -1,11 +1,12 @@
 # 03.05.26
 
 import re
+import time
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from rich.console import Console
 
@@ -13,7 +14,7 @@ from VibraVid.utils import config_manager
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.core.manifest.stream import DRMInfo, Segment, Stream
 from VibraVid.core.utils.language import resolve_locale
-from VibraVid.core.manifest._utils import save_raw_manifest
+from VibraVid.core.manifest._utils import save_raw_manifest, is_simple_relative_ref, fast_urljoin
 from VibraVid.core.drm.system import _DRMSystems, DRMType
 
 
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 _PLAYREADY_SYSTEM_ID = _DRMSystems.to_system_id(_DRMSystems.PLAYREADY)
 _WIDEVINE_SYSTEM_ID  = _DRMSystems.to_system_id(_DRMSystems.WIDEVINE)
+
+_BITRATE_RE   = re.compile(r"\{[Bb]itrate\}")
+_STARTTIME_RE = re.compile(r"\{start[ _][Tt]ime\}|\{[Ss]tart[Tt]ime\}")
 
 _FOURCC_TO_CODEC: Dict[str, str] = {
     "h264": "avc1", 
@@ -76,10 +80,13 @@ class ISMParser:
 
     def fetch_manifest(self) -> bool:
         """Fetch (or use injected) manifest XML and parse it into ``self._root``."""
+        start_parsing_time = time.time()
+        
         if self._injected:
             self.raw_content = self._injected
             try:
                 self._root = ET.fromstring(self.raw_content)
+                logger.info(f"ISMParser: injected XML parsed in {time.time() - start_parsing_time:.2f}s")
                 return True
             except ET.ParseError as exc:
                 logger.error(f"ISMParser: injected XML parse error: {exc}")
@@ -92,6 +99,7 @@ class ISMParser:
                 self.raw_content = local_path.read_text(encoding="utf-8")
                 self._base_url = local_path.parent.as_uri() + "/"
                 self._root = ET.fromstring(self.raw_content)
+                logger.info(f"ISMParser: local ISM manifest in {time.time() - start_parsing_time:.2f}s")
                 return True
             except Exception as exc:
                 console.print(f"[red]Failed to read local ISM manifest: {exc}.")
@@ -107,6 +115,7 @@ class ISMParser:
                 r.raise_for_status()
                 self.raw_content = r.text
             self._root = ET.fromstring(self.raw_content)
+            logger.info(f"ISMParser: fetched and parsed ISM in {time.time() - start_parsing_time:.2f}s")
             return True
         except Exception as exc:
             console.print(f"[red]Error fetching/parsing ISM manifest: {exc}[/red]")
@@ -319,15 +328,12 @@ class ISMParser:
         """
         Expand a chunk timeline into ``stream.segments`` using the URL template.
         """
+        url_with_bitrate = _BITRATE_RE.sub(str(bitrate), url_template)
+        ref_is_simple = is_simple_relative_ref(url_with_bitrate)
+
         for idx, start_time in enumerate(timeline):
-            url = url_template
-            url = re.sub(r"\{[Bb]itrate\}",         str(bitrate),    url)
-            url = re.sub(r"\{start[ _][Tt]ime\}",   str(start_time), url)
-
-            # Broader fallback for non-standard token forms
-            url = re.sub(r"\{[Ss]tart[Tt]ime\}",    str(start_time), url)
-
-            seg_url = urljoin(self._base_url, url)
+            url = _STARTTIME_RE.sub(str(start_time), url_with_bitrate)
+            seg_url = fast_urljoin(self._base_url, url, ref_is_simple)
             stream.add_segment(Segment(seg_url, idx, "media"))
 
     def _extract_drm(self, element) -> DRMInfo:
@@ -354,14 +360,14 @@ class ISMParser:
                 # raw_data is a base64-encoded PRO — treat as "PSSH" for DRMInfo
                 info.set_pssh(raw_data, drm_type_hint=DRMType.PLAYREADY)
                 info.set_method(_PLAYREADY_SYSTEM_ID)
-                logger.info(f"ISMParser: PlayReady PRO found (len={len(raw_data)})")
+                logger.debug(f"ISMParser: PlayReady PRO found (len={len(raw_data)})")
 
                 # Attempt KID extraction from the PRO binary
                 try:
                     kid = _DRMSystems.extract_kid_from_playready_pro(raw_data)
                     if kid:
                         info.set_kid(kid)
-                        logger.info(f"ISMParser: KID extracted from PRO: {kid}")
+                        logger.debug(f"ISMParser: KID extracted from PRO: {kid}")
                 except Exception as exc:
                     logger.debug(f"ISMParser: KID extraction from PRO failed: {exc}")
 

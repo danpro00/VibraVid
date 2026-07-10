@@ -67,12 +67,6 @@ def parse_select_audio_filter(select_audio: str) -> list:
     """
     Parse select_audio config format to extract language codes.
 
-    Config examples:
-        "lang='ita|eng':for=best"   → ["it-IT", "en-US"]
-        "lang='it-IT|ar-SA'"        → ["it-IT", "ar-SA"]
-        "for=all"                   → []  (use all available tracks)
-        ""                          → []  (no filter)
-
     Returns:
         List of resolved locales (e.g., ["it-IT", "en-US"])
         Empty list = no filter / use all tracks
@@ -82,7 +76,7 @@ def parse_select_audio_filter(select_audio: str) -> list:
 
     select_audio = select_audio.strip()
 
-    # "for=all" → no filter
+    # "for=all" -> no filter
     if "for=all" in select_audio.lower():
         return []
 
@@ -131,7 +125,7 @@ def download_film(select_title: Entries) -> str:
     Downloads a film using the provided Entries information.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} \n")
 
     # Initialize Crunchyroll client
     client = CrunchyrollClient()
@@ -195,7 +189,7 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     """
     start_message()
     client = scrape_serie.client
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
     path_components, filename = map_episode_path(scrape_serie.series_name, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
     title_path = os_manager.get_sanitize_path(anime_folder(*path_components))
@@ -261,12 +255,6 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
 def download_series(select_season: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None) -> None:
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - select_season (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection
-        - episode_selection (str, optional): Pre-defined episode selection
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if not scrape_serie:

@@ -1,6 +1,7 @@
 # 22.12.25
 
 import logging
+import threading
 
 from VibraVid.utils.http_client import create_client
 from VibraVid.services._base.object import SeasonManager, Episode, Season
@@ -163,6 +164,7 @@ class GetSerieInfo:
         self.seasons_manager = SeasonManager()
         self.n_seasons = 0
         self.seasons_list = []
+        self._collect_lock = threading.Lock()
         self._all_episodes = None
         self._get_show_info()
 
@@ -179,9 +181,10 @@ class GetSerieInfo:
                 response = client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
+            included = data.get('included', [])
 
             # Extract show info
-            show_info = next((x for x in data['included'] if x.get('attributes', {}).get('alternateId', '') == self.show_id), None)
+            show_info = next((x for x in included if x.get('attributes', {}).get('alternateId', '') == self.show_id), None)
             if not show_info:
                 logger.error(f"Show info not found for: {self.show_id}")
                 return []
@@ -189,7 +192,7 @@ class GetSerieInfo:
             self.series_name = show_info.get('attributes', {}).get('name', 'Unknown')
 
             # Locate the episodes content block
-            content = next((x for x in data['included'] if 'show-page-rail-episodes-tabbed-content' in x.get('attributes', {}).get('alias', '')), None)
+            content = next((x for x in included if 'show-page-rail-episodes-tabbed-content' in x.get('attributes', {}).get('alias', '')), None)
             if not content:
                 logger.error(f"Episodes content block not found for show {self.show_id}")
                 return []
@@ -205,29 +208,62 @@ class GetSerieInfo:
             season_params = [opt.get('parameter') for opt in season_filter.get('options', [])]
 
             all_episodes = []
-            for season_param in season_params:
-                coll_url = f"{self.client.base_url}/cms/collections/{content_id}?{season_param}&{show_params}"
-                coll_params = {
-                    'include': 'default',
-                    'decorators': 'viewingHistory,badges,isFavorite,contentAction',
-                }
-                with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
-                    response = client.get(coll_url, params=coll_params)
-                response.raise_for_status()
-                season_data = response.json()
 
-                for item in season_data.get('included', []):
-                    if item.get('type') == 'video' and item.get('attributes', {}).get('videoType') == 'EPISODE':
-                        attrs = item['attributes']
-                        relationships = item.get('relationships', {})
-                        edit_id = relationships.get('edit', {}).get('data', {}).get('id') or item.get('id')
-                        all_episodes.append({
-                            'id': edit_id,
-                            'show': self.series_name,
-                            'season': attrs.get('seasonNumber'),
-                            'episode': attrs.get('episodeNumber'),
-                            'title': attrs.get('name'),
-                        })
+            if season_params:
+                for season_param in season_params:
+                    coll_url = f"{self.client.base_url}/cms/collections/{content_id}?{season_param}&{show_params}"
+                    coll_params = {
+                        'include': 'default',
+                        'decorators': 'viewingHistory,badges,isFavorite,contentAction',
+                    }
+                    with create_client(headers=self.client.headers, cookies=self.client.cookies) as client:
+                        response = client.get(coll_url, params=coll_params)
+                    response.raise_for_status()
+                    season_data = response.json()
+
+                    for item in season_data.get('included', []):
+                        if item.get('type') == 'video' and item.get('attributes', {}).get('videoType') == 'EPISODE':
+                            attrs = item['attributes']
+                            relationships = item.get('relationships', {})
+                            edit_id = relationships.get('edit', {}).get('data', {}).get('id') or item.get('id')
+                            all_episodes.append({
+                                'id': edit_id,
+                                'show': self.series_name,
+                                'season': attrs.get('seasonNumber'),
+                                'episode': attrs.get('episodeNumber'),
+                                'title': attrs.get('name'),
+                            })
+            else:
+                item_refs = content.get('relationships', {}).get('items', {}).get('data', [])
+                collection_items = {x['id']: x for x in included if x.get('type') == 'collectionItem'}
+                videos_by_id = {x['id']: x for x in included if x.get('type') == 'video'}
+
+                for ref in item_refs:
+                    citem = collection_items.get(ref.get('id'))
+                    if not citem:
+                        continue
+
+                    video_ref = citem.get('relationships', {}).get('video', {}).get('data')
+                    if not video_ref:
+                        continue
+
+                    video = videos_by_id.get(video_ref.get('id'))
+                    if not video:
+                        continue
+
+                    vattrs = video.get('attributes', {})
+                    if vattrs.get('videoType') not in ('EPISODE', 'STANDALONE'):
+                        continue
+                    
+                    relationships = video.get('relationships', {})
+                    edit_id = relationships.get('edit', {}).get('data', {}).get('id') or video.get('id')
+                    all_episodes.append({
+                        'id': edit_id,
+                        'show': self.series_name,
+                        'season': vattrs.get('seasonNumber') or 1,
+                        'episode': vattrs.get('episodeNumber') or (len(all_episodes) + 1),
+                        'title': vattrs.get('name'),
+                    })
 
             # Sort by season and episode
             all_episodes.sort(key=lambda x: (x['season'], x['episode']))
@@ -299,13 +335,15 @@ class GetSerieInfo:
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
         """Get total number of seasons"""
-        if not self.seasons_manager.seasons:
-            self.collect_season()
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_season()
         return len(self.seasons_manager.seasons)
 
     def getEpisodeSeasons(self, season_number: int) -> list:
         """Get all episodes for a specific season"""
-        if not self.seasons_manager.seasons:
-            self.collect_season()
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_season()
         season = self.seasons_manager.get_season_by_number(season_number)
         return season.episodes.episodes if season else []

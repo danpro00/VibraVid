@@ -7,7 +7,7 @@ from rich.console import Console
 
 from VibraVid.utils import config_manager
 from VibraVid.core.drm.system import DRMType
-from VibraVid.core.downloader._detect import (detect_stream_type, parse_headers, parse_keys, derive_output_path)
+from VibraVid.core.downloader.util._detect import (detect_stream_type, parse_headers, parse_keys, derive_output_path)
 
 logger = logging.getLogger(__name__)
 console = Console()

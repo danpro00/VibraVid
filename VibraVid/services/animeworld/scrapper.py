@@ -65,15 +65,9 @@ class ScrapSerie:
     
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
-        """
-        Get the total number of seasons available for the anime.
-        Note: AnimeWorld typically doesn't have seasons, so returns 1.
-        """
+        """Get the total number of seasons available for the anime."""
         return 1
     
     def getEpisodeSeasons(self, season_number: int = 1) -> list:
-        """
-        Get all episodes for a specific season.
-        Note: For AnimeWorld, this returns all episodes as they're typically in one season.
-        """
+        """Get all episodes for a specific season."""
         return self.get_episodes()

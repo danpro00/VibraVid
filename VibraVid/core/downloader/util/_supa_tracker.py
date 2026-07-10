@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class SupaTracker:
     def fire(self, title: str, media_type: str, site: str) -> None:
+        """Fire-and-forget background thread to track a download in SupaVault."""
         try:
             threading.Thread(target=self._run, args=(title, media_type, site), daemon=False).start()
         except Exception:
@@ -18,6 +19,7 @@ class SupaTracker:
 
     @staticmethod
     def _run(title: str, media_type: str, site: str) -> None:
+        """Track a download in SupaVault.  Logs errors but never raises."""
         try:
             if not supa_vault:
                 logger.warning("SupaTracker: supa_vault not initialized")

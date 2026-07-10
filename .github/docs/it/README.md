@@ -91,8 +91,8 @@ vibravid
 
 ### Documentazione aggiuntiva
 
-- 📝 [Guida al login](../../.github/doc/login.md) — Autenticazione per i servizi supportati
-- 🖥️ [Guida al deployment su NAS](../../docs/NAS.md) — Setup Docker su Synology, TrueNAS e altri NAS
+- 📝 [Guida al login](login.md) — Autenticazione per i servizi supportati
+- 🖥️ [Guida al deployment su NAS](NAS.md) — Setup Docker su Synology, TrueNAS e altri NAS
 
 ---
 
@@ -246,8 +246,8 @@ Tutte le impostazioni si trovano in `config.json`. Le sezioni seguenti descrivon
 **`movie_folder_name`**, **`serie_folder_name`**, **`anime_folder_name`** — Nomi delle sottocartelle per ogni tipo di contenuto (predefiniti: `"Movie"`, `"Serie"`, `"Anime"`). Tutti supportano il segnaposto `%{site_name}`:
 
 ```
-"Movie/%{site_name}"  →  "Movie/Crunchyroll"
-"Serie/%{site_name}"  →  "Serie/Crunchyroll"
+"Movie/%{site_name}"  ->  "Movie/Crunchyroll"
+"Serie/%{site_name}"  ->  "Serie/Crunchyroll"
 ```
 
 ---
@@ -257,8 +257,8 @@ Tutte le impostazioni si trovano in `config.json`. Le sezioni seguenti descrivon
 **Predefinito:** `"%(title_name) (%(title_year))/%(title_name) (%(title_year))"`
 
 ```
-%(title_name) (%(title_year))/   →  cartella    Inception (2010)/
-%(title_name) (%(title_year))    →  nome file   Inception (2010).mkv
+%(title_name) (%(title_year))/   ->  cartella    Inception (2010)/
+%(title_name) (%(title_year))    ->  nome file   Inception (2010).mkv
 ```
 
 | Variabile | Descrizione |
@@ -282,9 +282,9 @@ Tutte le impostazioni si trovano in `config.json`. Le sezioni seguenti descrivon
 **Predefinito:** `"%(series_name)/S%(season:02d)/%(episode_name) S%(season:02d)E%(episode:02d)"`
 
 ```
-%(series_name)/     →  cartella serie    Breaking Bad/
-S%(season:02d)/     →  cartella stagione  S01/
-%(episode_name)...  →  nome file          Pilot S01E05.mkv
+%(series_name)/     ->  cartella serie    Breaking Bad/
+S%(season:02d)/     ->  cartella stagione  S01/
+%(episode_name)...  ->  nome file          Pilot S01E05.mkv
 ```
 
 | Variabile | Descrizione |
@@ -327,6 +327,8 @@ S%(season:02d)/     →  cartella stagione  S01/
     "delay_after_download": 1,
     "skip_download": false,
     "thread_count": 12,
+    "decrypt_worker_count": 12,
+    "realtime_decrypt": true,
     "concurrent_download": true,
     "select_video": "1920",
     "select_audio": "ita|Ita",
@@ -345,6 +347,8 @@ S%(season:02d)/     →  cartella stagione  S01/
 | `delay_after_download` | `1` | Ritardo (secondi) applicato dopo ogni download |
 | `skip_download` | `false` | Salta il download ed elabora i file esistenti |
 | `thread_count` | `12` | Numero di richieste concorrenti per un singolo flusso |
+| `decrypt_worker_count` | `THREAD_COUNT` | Numero di segmenti decriptati in parallelo quando `realtime_decrypt` è `true`.
+| `realtime_decrypt` | `true` | Decripta ogni segmento non appena scaricato invece di decriptare l'intero file una sola volta a fine merge.
 | `concurrent_download` | `true` | Scarica video, audio e sottotitoli simultaneamente |
 | `cleanup_tmp_folder` | `true` | Rimuove i file temporanei dopo il download |
 | `engine` | `"ffmpeg"` | Motore di muxing usato per unire video, audio e sottotitoli. `ffmpeg` funziona senza configurazioni aggiuntive; `mkvmerge` richiede l'installazione completa |
@@ -454,6 +458,7 @@ La traccia DV viene muxata come traccia video aggiuntiva tramite mkvmerge.
     "timeout": 30,
     "max_retry": 10,
     "use_proxy": false,
+    "proxy_scope": "scrap+down",
     "proxy": {
       "http": "http://localhost:8888",
       "https": "http://localhost:8888"
@@ -467,8 +472,27 @@ La traccia DV viene muxata come traccia video aggiuntiva tramite mkvmerge.
 | `timeout` | `30` | Timeout delle richieste in secondi |
 | `max_retry` | `10` | Numero massimo di tentativi per richieste fallite |
 | `use_proxy` | `false` | Abilita il supporto proxy per le richieste HTTP |
-| `proxy.http` | — | URL del proxy HTTP |
-| `proxy.https` | — | URL del proxy HTTPS |
+| `proxy_scope` | `scrap+down` | Dove applicare il proxy: `scrap`, `down` o `scrap+down` (vedi sotto) |
+| `proxy.http` | — | URL del proxy per destinazioni HTTP |
+| `proxy.https` | — | URL del proxy per destinazioni HTTPS |
+
+> **Ambito del proxy (proxy scope)** — quando `use_proxy` è `true`, `proxy_scope` decide *quale* traffico passa dal proxy:
+> | Valore | Effetto |
+> |--------|---------|
+> | `scrap` | Solo il client HTTP di VibraVid (ricerca, metadati, manifest, licenze DRM) |
+> | `down` | Solo il motore di download Velora (download dei segmenti media/sottotitoli) |
+> | `scrap+down` | Entrambi (predefinito) |
+>
+> Qualsiasi valore non valido ricade su `scrap+down`. Puoi sovrascriverlo per singola esecuzione da CLI con `--proxy-scope scrap|down|scrap+down`.
+
+> **Supporto SOCKS5** — le chiavi `http`/`https` indicano lo schema dell'URL di **destinazione**, non il protocollo del proxy. Il valore può essere un proxy HTTP **oppure** SOCKS5. Usa `socks5h://` (con la `h`) per risolvere il DNS tramite il proxy — consigliato per i siti geo-bloccati e per evitare DNS leak. L'autenticazione è supportata tramite `user:pass@`.
+>
+> ```json
+> "proxy": {
+>   "http":  "socks5h://localhost:1080",
+>   "https": "socks5h://user:pass@localhost:1080"
+> }
+> ```
 
 ---
 
@@ -547,8 +571,17 @@ python manual.py --site streamingcommunity --search "interstellar"
 # Scarica automaticamente il primo risultato
 python manual.py --site streamingcommunity --search "interstellar" --auto-first
 
+# Seleziona un risultato specifico per indice (0-based) invece del primo
+python manual.py --site streamingcommunity --search "interstellar" --item 2
+
 # Usa un sito tramite il suo indice
 python manual.py --site 0 --search "interstellar"
+
+# Salta le release TS/CAM (solo StreamingCommunity)
+python manual.py --site streamingcommunity --search "interstellar" --skip-ts
+
+# Disabilita il file di log per questa esecuzione
+python manual.py --site streamingcommunity --search "interstellar" --no-log
 ```
 
 ### Selezione serie
@@ -606,13 +639,37 @@ python manual.py --site streamingcommunity --search "interstellar" --close-conso
 ### Proxy
 
 ```bash
+# Usa il proxy configurato per tutto (ambito predefinito)
 python manual.py --site streamingcommunity --search "interstellar" --use_proxy
+
+# Proxy solo per lo scraping, download in diretta
+python manual.py --site streamingcommunity --search "interstellar" --use_proxy --proxy-scope scrap
 ```
 
 ### Mostra percorsi dipendenze
 
 ```bash
 python manual.py --dep
+```
+
+### Download diretto da URL (`--down`)
+
+Scarica un flusso direttamente dal suo URL, saltando completamente la ricerca sul sito. Il
+tipo di flusso viene rilevato automaticamente (MP4 / HLS / DASH / ISM) o può essere forzato
+con `--type`.
+
+```bash
+# Flusso MP4 semplice / rilevato automaticamente
+python manual.py --down "https://example.com/video.mp4" -o "./Video/clip.mp4"
+
+# HLS con una chiave di decrittazione nota
+python manual.py --down "https://example.com/master.m3u8" --type hls \
+  --key "<KID>:<KEY>" -o "./Video/movie.mkv"
+
+# DASH con un license server DRM (Widevine)
+python manual.py --down "https://example.com/manifest.mpd" --type dash \
+  --license-url "https://example.com/wv/license" --drm widevine \
+  --headers "Authorization: Bearer <token>" -o "./Video/movie.mkv"
 ```
 
 ---
@@ -627,6 +684,7 @@ python manual.py --global -s "cars"
 python manual.py --category 1    # Anime
 python manual.py --category 2    # Film e Serie
 python manual.py --category 3    # Solo Serie
+python manual.py --category 4    # Solo Film
 ```
 
 ---
@@ -716,7 +774,7 @@ docker-compose logs -f      # Visualizza log
 docker-compose down         # Ferma (i dati vengono preservati)
 ```
 
-Per utenti NAS (Synology, TrueNAS, Unraid, ecc.) vedere **[docs/NAS.md](../../docs/NAS.md)** per una guida passo passo che include bind mount e configurazione dei permessi.
+Per utenti NAS (Synology, TrueNAS, Unraid, ecc.) vedere la **[guida al deployment su NAS](NAS.md)** per una guida passo passo che include bind mount e configurazione dei permessi.
 
 ### Percorsi e porte personalizzate
 
@@ -842,14 +900,14 @@ Tag di controllo disponibili in Sonarr/Radarr:
 | Tag | Comportamento |
 |-----|---------------|
 | `hold` / `pausa` | Salta l'elemento finché il tag non viene rimosso |
-| `skip-s1`, `skip-s2`, … | Salta la stagione specificata |
+| `skip-s1`, `skip-s2`, ... | Salta la stagione specificata |
 | `provider-<sito>` | Forza un provider specifico per quell'elemento |
 
 Con `"download_italian_anime_default": true`, se il provider restituisce sia la versione originale che una versione `(ITA)`, VibraVid preferisce automaticamente il doppiaggio italiano.
 
 #### Webhook (Radarr / Sonarr)
 
-Aggiungi **una sola connessione** per applicazione in Settings → Connect → Webhook.
+Aggiungi **una sola connessione** per applicazione in Settings -> Connect -> Webhook.
 
 | App | URL endpoint | Trigger |
 |-----|-------------|---------|

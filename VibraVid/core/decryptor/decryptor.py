@@ -6,13 +6,12 @@ import shutil
 import subprocess
 from typing import Any, Callable, Dict, Optional
 
-from VibraVid.setup import get_bento4_decrypt_path, get_ffmpeg_path, get_mp4dump_path, get_shaka_packager_path
+from VibraVid.setup import get_bento4_decrypt_path, get_ffmpeg_path, get_shaka_packager_path
 from VibraVid.core.ui.bar_manager import console
 
 from ._subprocess_runner import run_with_progress
-from ._models import SCHEME_TO_MODE
+from ._models import SCHEME_TO_MODE, detect_encryption_info
 from .keys_manager import KeysManager
-from ._mp4_inspector import detect_encryption_info
 
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,6 @@ class Decryptor:
     def __init__(self, license_url: str = None, drm_type: str = None, **_kwargs) -> None:
         logger.debug(f"Initializing Decryptor license_url={license_url!r} drm_type={drm_type!r}")
         self.mp4decrypt_path = get_bento4_decrypt_path()
-        self.mp4dump_path = get_mp4dump_path()
         self.shaka_packager_path = get_shaka_packager_path()
         self.ffmpeg_path = get_ffmpeg_path()
         self.license_url = license_url
@@ -46,7 +44,7 @@ class Decryptor:
 
     def detect_encryption(self, file_path: str) -> tuple:
         logger.debug(f"Detecting encryption: {os.path.basename(file_path)}")
-        info = detect_encryption_info(self.mp4dump_path, file_path)
+        info = detect_encryption_info(file_path)
 
         if not info.encrypted:
             logger.info("No encryption indicators found")
@@ -100,23 +98,21 @@ class Decryptor:
             cmd.extend([encrypted_path, decrypted_path])
             logger.debug(f"Bento4 live cmd: {self._redacted_cmd(cmd)}")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            result = subprocess.run(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=180,
+                creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+            )
             if result.returncode != 0:
                 msg = result.stderr.strip() if result.stderr else "Unknown error"
                 logger.error(f"Bento4 live decryption failed: {msg}")
                 return False, f"Error Bento4: {msg}", None
 
-            if not os.path.exists(decrypted_path):
-                return False, "Error Bento4: output file missing", None
+            size = os.path.getsize(decrypted_path) if os.path.exists(decrypted_path) else 0
+            if size <= 0:
+                return False, "Error Bento4: output file missing or empty", None
 
-            with open(decrypted_path, "rb") as f:
-                data = f.read()
-
-            if not data:
-                return False, "Error Bento4: empty output", None
-
-            logger.debug(f"Bento4 live segment decrypted successfully: {len(data)} bytes")
-            return True, "Bento4 live segment decrypted", data
+            logger.debug(f"Bento4 live segment decrypted successfully: {size} bytes")
+            return True, "Bento4 live segment decrypted", None
 
         except Exception as exc:
             logger.error(f"Exception Bento4 live: {exc}")
@@ -167,7 +163,6 @@ class Decryptor:
         return False
 
     def decrypt(self, encrypted_path: str, keys, output_path: str, stream_type: str = "video", progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> bool:
-        logger.info(f"decrypt(): {os.path.basename(encrypted_path)} stream={stream_type} keys={keys} [NON-LIVE]")
         try:
             mode, kid, _pssh, _codec, enc_method = self.detect_encryption(encrypted_path)
             norm_keys = KeysManager.normalize(keys)
@@ -207,7 +202,6 @@ class Decryptor:
                 )
 
             if ok:
-                logger.info(f"Decryption successful: {os.path.basename(output_path)}")
                 return True
 
             if mode == "unknown":

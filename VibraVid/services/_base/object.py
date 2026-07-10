@@ -156,7 +156,10 @@ class EntriesManager:
     def add(self, media: Entries) -> None:
 
         # Logic to fetch year if 9999
-        if media.year == "9999":
+        if media.year == "9999" and not tmdb_client.api_key:
+            media.year = str(datetime.now().year)
+
+        elif media.year == "9999":
             if (media.slug and media.slug != ''):
                 logger.info(f"Fetching year for slug: {media.slug}, type: {media.type}")
                 media.year = str(tmdb_client.get_year_by_slug_and_type(media.slug, media.type) or "9999")

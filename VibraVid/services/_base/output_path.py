@@ -26,3 +26,7 @@ def anime_folder(*path_components: str) -> str:
 
 def music_folder(*path_components: str) -> str:
     return _resolve_folder(site_constants.MUSIC_FOLDER, *path_components)
+
+
+def live_folder(*path_components: str) -> str:
+    return _resolve_folder(site_constants.LIVE_FOLDER, *path_components)

@@ -1,6 +1,7 @@
 # 20.05.26
 
 import logging
+import threading
 
 from VibraVid.services._base.object import SeasonManager, Episode, Season
 from VibraVid.provider.tmdb import tmdb
@@ -17,8 +18,13 @@ class GetSerieInfo:
         self.year = year
         self.seasons_manager = SeasonManager()
         self._loaded = False
+        self._load_lock = threading.Lock()
 
     def _load(self):
+        with self._load_lock:
+            self._load_locked()
+
+    def _load_locked(self):
         if self._loaded:
             return
 
@@ -54,10 +60,12 @@ class GetSerieInfo:
     
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
+        """Get the total number of seasons available for the series."""
         self._load()
         return len(self.seasons_manager.seasons)
 
     def getEpisodeSeasons(self, season_number: int) -> list:
+        """Get all episodes for a specific season."""
         self._load()
 
         season_details = tmdb._make_request(f"tv/{self.tmdb_id}/season/{season_number}", {"language": "it"}) or {}

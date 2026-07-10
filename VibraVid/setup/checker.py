@@ -73,46 +73,6 @@ def check_bento4() -> Optional[str]:
     return None
 
 
-def check_mp4dump() -> Optional[str]:
-    """
-    Check for Bento4 mp4dump binary and download if not found.
-    """
-    system_platform = binary_paths.system
-    binary_exec = "mp4dump.exe" if system_platform == "windows" else "mp4dump"
-
-    # STEP 1: Check system PATH
-    binary_path = shutil.which(binary_exec)
-    if binary_path:
-        logger.debug(f"Found {binary_exec} in system PATH ({binary_path})")
-        return binary_path
-
-    # STEP 2: Check local binary directory
-    binary_local = binary_paths.get_binary_path("bento4", binary_exec)
-    if binary_local and os.path.isfile(binary_local):
-        logger.debug(f"Found {binary_exec} in local binary directory ({binary_local})")
-        return binary_local
-
-    # Termux-specific check
-    if is_termux():
-        console.print("[red]Bento4 (mp4dump) is required on Termux.[/red]")
-        console.print("[cyan]Please install it using: [yellow]pkg install bento4[/cyan]")
-        return None
-
-    # STEP 3: Download (only if installation level includes bento4)
-    if not _should_download("bento4"):
-        logger.info(f"Skipping download of {binary_exec}")
-        return None
-
-    binary_downloaded = binary_paths.download_binary("bento4", binary_exec)
-    if binary_downloaded:
-        logger.debug(f"Downloaded {binary_exec} to {binary_downloaded}")
-        return binary_downloaded
-
-    logger.error(f"Failed to download {binary_exec}")
-    console.print(f"Failed to download {binary_exec}", style="red")
-    return None
-
-
 def check_ffmpeg() -> Tuple[Optional[str], Optional[str]]:
     """
     Check for FFmpeg executables and download if not found.

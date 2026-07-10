@@ -195,12 +195,26 @@ def title_search(query: str) -> int:
             else:
                 content_type = 'movie'
 
+            # Multi-day events (e.g. Goodwood Revival) share a name across days;
+            # secondaryTitle ("Giorno 1/2/3...") disambiguates them in the table
+            # and prevents them from overwriting each other's output file.
+            name = attrs.get('name')
+            secondary_title = attrs.get('secondaryTitle')
+            if secondary_title:
+                name = f"{name} - {secondary_title}"
+
+            # The edit ID is already present on the search result itself;
+            # capture it so downloaders can skip a second, content-type-specific
+            # lookup that doesn't apply to every video shape (see download_film).
+            edit_id = relationships.get('edit', {}).get('data', {}).get('id')
+
             entries_manager.add(Entries(
                 id=element.get('id'),
-                name=attrs.get('name'),
+                name=name,
                 type=content_type,
                 image=image_url,
-                year=year
+                year=year,
+                edit_id=edit_id
             ))
 
     return len(entries_manager)

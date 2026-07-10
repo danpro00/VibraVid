@@ -51,7 +51,7 @@ def build_table(streams: list, selected: Optional[Set[int]] = None, cursor: Opti
     """
     Build and return a Rich stream-selection table.
 
-    Display order: Video (bitrate desc) → Audio (bitrate desc) → Subtitle.
+    Display order: Video (bitrate desc) -> Audio (bitrate desc) -> Subtitle.
     External streams (*EXT) appear at the end of their category.
     """
     table = create_styled_table(TABLE_STYLE)
@@ -84,7 +84,7 @@ def build_table(streams: list, selected: Optional[Set[int]] = None, cursor: Opti
     else:
         start, end = 0, total
     
-    _ellipsis = ("…", "", "", "", "", "", "", "", "", "", "")
+    _ellipsis = ("...", "", "", "", "", "", "", "", "", "", "")
     if interactive and start > 0:
         table.add_row(*_ellipsis)
 

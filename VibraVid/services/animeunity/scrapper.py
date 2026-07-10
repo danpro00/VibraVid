@@ -1,6 +1,7 @@
 # 01.03.24
 
 import logging
+import threading
 
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.services._base.object import EpisodeManager, Episode
@@ -21,6 +22,7 @@ class ScrapeSerieAnime:
         self.headers = get_headers()
         self.url = url
         self.episodes_cache = None
+        self._fetch_lock = threading.Lock()
 
     def setup(self, version: str = None, media_id: int = None, series_name: str = None):
         self.version = version
@@ -39,9 +41,10 @@ class ScrapeSerieAnime:
         Returns:
             int: Total episode count including partial episodes
         """
-        if self.episodes_cache is None:
-            self._fetch_all_episodes()
-            
+        with self._fetch_lock:
+            if self.episodes_cache is None:
+                self._fetch_all_episodes()
+
         if self.episodes_cache:
             return len(self.episodes_cache)
         return None
@@ -85,9 +88,10 @@ class ScrapeSerieAnime:
         """
         Get episode info from cache
         """
-        if self.episodes_cache is None:
-            self._fetch_all_episodes()
-            
+        with self._fetch_lock:
+            if self.episodes_cache is None:
+                self._fetch_all_episodes()
+
         if self.episodes_cache and 0 <= index_ep < len(self.episodes_cache):
             ep = self.episodes_cache[index_ep]
             return Episode(
@@ -100,8 +104,5 @@ class ScrapeSerieAnime:
 
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
-        """
-        Get the total number of seasons available for the anime.
-        Note: AnimeUnity typically doesn't have seasons, so returns 1.
-        """
+        """Get the total number of seasons available for the anime."""
         return 1

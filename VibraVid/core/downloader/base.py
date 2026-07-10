@@ -22,7 +22,7 @@ from VibraVid.core.muxing.helper.audio import audio_ext_for_codec
 from VibraVid.utils.vault_upload.hook import upload_after
 from VibraVid.setup import get_ffmpeg_path
 
-from VibraVid.core.velora._verify_decrypt import verify_decrypted_media
+from VibraVid.core.velora.util._verify import verify_decrypted_media
 from VibraVid.core.muxing.helper.video_hybrid import download_other_tracks
 from VibraVid.utils.hooks import execute_hooks
 
@@ -86,9 +86,7 @@ class BaseDownloader:
         self.output_path = self._strip_media_tokens(self.output_path)
 
         self.filename_base = os.path.splitext(os.path.basename(self.output_path))[0]
-        self.output_dir = os.path.join(
-            os.path.dirname(self.output_path), self.filename_base + temp_suffix
-        )
+        self.output_dir = self._resolve_temp_dir(temp_suffix)
         self.file_already_exists = self._finished_file_exists()
 
         self.download_id = context_tracker.download_id
@@ -100,6 +98,23 @@ class BaseDownloader:
         self.copied_subtitles = []
         self.copied_audios = []
         self.audio_only = False
+
+    def _resolve_temp_dir(self, temp_suffix: str) -> str:
+        """Path of the scratch directory for segments, muxing leftovers and subtitles."""
+        directory = os.path.dirname(self.output_path)
+        temp_dir = os.path.join(directory, "." + self.filename_base + temp_suffix)
+
+        # Adopt a temp dir left by a pre-dot-prefix version so its segments stay resumable.
+        legacy_dir = os.path.join(directory, self.filename_base + temp_suffix)
+        if os.path.isdir(legacy_dir) and not os.path.isdir(temp_dir):
+            try:
+                os.rename(legacy_dir, temp_dir)
+                logger.info(f"Migrated legacy temp dir '{legacy_dir}' to '{temp_dir}'")
+            except OSError as e:
+                logger.warning(f"Could not migrate legacy temp dir '{legacy_dir}': {e}")
+                return legacy_dir
+
+        return temp_dir
 
     def _finished_file_exists(self) -> bool:
         """True if the final file already exists, INCLUDING media-token variants
@@ -168,6 +183,19 @@ class BaseDownloader:
                 formatted_keys.append(str(k))
         return formatted_keys
 
+    def _build_download_cmd(self, name: str, manifest_url: str, formatted_keys: list) -> str:
+        """Build a ready-to-run ``python manual.py --down`` command that re-downloads this video directly from its manifest + already-extracted keys."""
+        if not manifest_url:
+            return ""
+        
+        safe_name = re.sub(r'[\\/:*?"<>|]+', "_", (name or "output")).strip() or "output"
+        parts = [f'python manual.py --down "{manifest_url}"']
+        for k in formatted_keys:
+            parts.append(f'--key {k}')
+        
+        parts.append(f'-o "{safe_name}"')
+        return " ".join(parts)
+
     def track_download_start(self, title: str, media_type: str, site: str) -> None:
         """Fire-and-forget: notify Supabase that a download has started."""
         def _run():
@@ -210,11 +238,13 @@ class BaseDownloader:
             if episode_name:
                 name += f" {episode_name}"
 
+        formatted_keys = self._format_keys(keys)
         payload = {
             "name": name,
             "manifest": manifest_url,
             "other_tracks": self._build_other_tracks(),
-            "keys": self._format_keys(keys),
+            "keys": formatted_keys,
+            "cmd": self._build_download_cmd(name, manifest_url, formatted_keys),
         }
         if DEBUG_TRACK_JSON:
             _append_tracks_json(payload)
@@ -308,7 +338,7 @@ class BaseDownloader:
 
         for track in other_track_results:
             track_kind = (track.get("kind") or track.get("type") or "").lower()
-            base_kind = track_kind.split(":")[0]   # "video:hdr10" → "video"
+            base_kind = track_kind.split(":")[0]   # "video:hdr10" -> "video"
             if base_kind == "video":
                 continue
             if base_kind == "audio":

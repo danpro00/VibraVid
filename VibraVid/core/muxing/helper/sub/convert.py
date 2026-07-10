@@ -99,7 +99,7 @@ def extract_vtt_from_wvtt_mp4(wvtt_path: str, output_vtt_path: Optional[str] = N
             cmd = [mp4box, "-raw", "1", wvtt_path, "-out", output_vtt_path]
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0 and os.path.exists(output_vtt_path) and os.path.getsize(output_vtt_path) > 0:
-                logger.info(f"extract_vtt_from_wvtt_mp4 [MP4Box] OK → {os.path.basename(output_vtt_path)}")
+                logger.info(f"extract_vtt_from_wvtt_mp4 [MP4Box] OK -> {os.path.basename(output_vtt_path)}")
                 sanitize_vtt_file(output_vtt_path)
                 return output_vtt_path
             else:

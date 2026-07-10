@@ -79,7 +79,7 @@ class InteractiveStreamSelector:
             elif key == 'ENTER':
                 if self.selected:
                     self._apply_selection()
-                    console.print("\n[green]✓ Selection confirmed[/green]\n")
+                    console.print("\n[green]OK Selection confirmed[/green]\n")
                     return self.selected
                 else:
                     console.print("\n[yellow]⚠ Please select at least one stream![/yellow]")

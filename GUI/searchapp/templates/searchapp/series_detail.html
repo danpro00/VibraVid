@@ -429,13 +429,13 @@ function initEpisodeSelection() {
     console.log(`[initEpisodeSelection] Checkbox: Season ${season}, Episode ${episodeNum}`);
     
     if (cb.checked) {
-      console.log(`[initEpisodeSelection] ✓ Already checked: S${season}E${episodeNum}`);
+      console.log(`[initEpisodeSelection] OK Already checked: S${season}E${episodeNum}`);
       updateSelectedEpisodes(cb.dataset.season);
     }
     
     cb.addEventListener('change', function() {
       const checked = this.checked ? 'CHECKED' : 'UNCHECKED';
-      console.log(`[CHECKBOX CHANGE] S${season}E${episodeNum} → ${checked}`);
+      console.log(`[CHECKBOX CHANGE] S${season}E${episodeNum} -> ${checked}`);
       updateSelectedEpisodes(this.dataset.season);
     });
   });
@@ -464,7 +464,7 @@ function initFormValidation() {
         e.preventDefault();
         alert('Seleziona almeno un episodio prima di scaricare.');
       } else {
-        console.log(`[FORM SUBMIT] ✓ Form validation passed, submitting...`);
+        console.log(`[FORM SUBMIT] OK Form validation passed, submitting...`);
       }
     });
   });

@@ -88,7 +88,7 @@ class Mediainfo:
                 ),
                 start_time = float(start_m.group(1)) if start_m else 0.0,
             )
-            logger.info(f"Stream [{info.type} - {info.base_info}], id={info.id}, res={info.resolution}, fps={info.fps}, hdr={info.hdr}, dolby_vision={info.dolby_vision}")
+            logger.info(f"[PROBE][{Path(file).name}] Stream [{info.type} - {info.base_info}], id={info.id}, res={info.resolution}, fps={info.fps}, hdr={info.hdr}, dolby_vision={info.dolby_vision}")
             result.append(info)
 
         if not result:

@@ -5,6 +5,7 @@ import logging
 import platform
 import threading
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from rich.console import Console
@@ -14,7 +15,6 @@ from VibraVid.core.manifest.m3u8 import HLSParser
 from VibraVid.core.manifest.mpd import DashParser
 from VibraVid.core.manifest.ism import ISMParser
 from VibraVid.core.manifest.stream import Stream
-from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.provider.tmdb import tmdb_client
 
 from VibraVid.core.ui.tracker import download_tracker
@@ -25,56 +25,13 @@ from VibraVid.core.utils.language import resolve_locale, LANGUAGE_MAP
 from VibraVid.core.utils.stream_selector_ui import InteractiveStreamSelector
 from VibraVid.core.utils.codec import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS, SUBTITLE_CODEC_MAP
 from VibraVid.core.velora.subtitle import build_ext_track_label, is_valid_format, ext_from_url, normalize_sub_filename
+from VibraVid.core.velora.util._subtitle_segments import resolve_subtitle_segments_sync, get_subtitle_resolve_workers
 from VibraVid.core.decryptor import KeysManager
 
 
 logger = logging.getLogger(__name__)
 auto_select = config_manager.config.get_bool("DOWNLOAD", "auto_select")
 
-
-def resolve_subtitle_url_sync(url: str, headers: Dict) -> Tuple[str, str]:
-    """
-    Synchronously probe *url* to determine the real subtitle format.
-
-    If the response is an HLS manifest (``#EXTM3U``), the first media segment
-    URL is extracted and its extension is used.  Returns ``(final_url, ext)``
-    where *ext* may be an empty string if nothing recognisable was found.
-    """
-    from urllib.parse import urljoin
-    try:
-        hdrs = dict(headers)
-        hdrs.setdefault("User-Agent", get_headers().get("User-Agent", ""))
-        logger.info(f"resolve_subtitle_url_sync: probing {url!r}")
-
-        with create_client(headers=hdrs, timeout=15, follow_redirects=True) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            text = resp.text.strip()
-    except Exception as exc:
-        logger.info(f"resolve_subtitle_url_sync: request failed for {url!r}: {exc}")
-        return url, ext_from_url(url, "")
-
-    if text.startswith("#EXTM3U"):
-        for line in text.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                absolute_url = urljoin(url, line)
-                resolved_ext = ext_from_url(absolute_url, "")
-                logger.info(f"Resolved HLS subtitle manifest -> segment {line!r} (ext={resolved_ext!r})")
-                return absolute_url, resolved_ext
-        
-        logger.info(f"resolve_subtitle_url_sync: manifest at {url!r} had no segments")
-        return url, ""
-
-    content_type = resp.headers.get("content-type", "").lower()
-    for mime, ext in (
-        ("vtt", "vtt"), ("webvtt", "vtt"), ("srt", "srt"),
-        ("ttml", "ttml"), ("xml", "xml"), ("dfxp", "dfxp"),
-    ):
-        if mime in content_type:
-            return url, ext
-    
-    return url, ext_from_url(url, "")
 
 
 def lang_variants(normalized_lang: str) -> Set[str]:
@@ -512,38 +469,57 @@ class BaseMediaDownloader:
  
         return tasks
 
+    def _resolve_external_subtitle(self, s: Stream) -> Optional[Dict]:
+        sub_url = s.playlist_url or (s.segments[0].url if s.segments else None)
+        if not sub_url:
+            return None
+
+        ext = ext_from_url(sub_url, "")
+        segments: List[Tuple[str, float]] = [(sub_url, 0.0)]
+        if not ext or not is_valid_format(ext, "subtitle"):
+            segments, ext = resolve_subtitle_segments_sync(sub_url, self.headers)
+            if not ext or not is_valid_format(ext, "subtitle"):
+                logger.info(f"Skipping external subtitle (unsupported format): {s.language} url={sub_url}")
+                s.selected = False
+                return None
+
+        entry = {
+            "url":       segments[0][0],
+            "segments":  [{"url": u, "duration": d} for u, d in segments],
+            "language":  s.language or "und",
+            "name":      s.name or "",
+            "forced":    s.forced,
+            "sdh":       s.is_sdh,
+            "cc":        s.is_cc,
+            "default":   s.default,
+            "type":      ext,
+            "_selected": True,
+        }
+        logger.info(f"Subtitle -> external: {s.language}  segments={len(segments)}  url={segments[0][0]}")
+        s.selected = False
+        return entry
+
     def _promote_hls_subtitles_to_external(self) -> None:
         """Move selected HLS subtitle streams into self.external_subtitles."""
+        candidates = [
+            s for s in self.streams
+            if s.type == "subtitle" and s.selected and not s.is_external and self.manifest_type == "HLS"
+        ]
+        if not candidates:
+            return
+
         new_ext_subs: List[Dict] = []
-        for s in self.streams:
-            if s.type == "subtitle" and s.selected and not s.is_external and self.manifest_type == "HLS":
-                sub_url = s.playlist_url or (s.segments[0].url if s.segments else None)
-                if not sub_url:
-                    continue
-
-                ext = ext_from_url(sub_url, "")
-                if not ext or not is_valid_format(ext, "subtitle"):
-                    resolved_url, ext = resolve_subtitle_url_sync(sub_url, self.headers)
-                    if not ext or not is_valid_format(ext, "subtitle"):
-                        logger.info(f"Skipping external subtitle (unsupported format): {s.language} url={sub_url}")
-                        s.selected = False
-                        continue
-                        
-                    sub_url = resolved_url
-
-                new_ext_subs.append({
-                    "url":       sub_url,
-                    "language":  s.language or "und",
-                    "name":      s.name or "",
-                    "forced":    s.forced,
-                    "sdh":       s.is_sdh,
-                    "cc":        s.is_cc,
-                    "default":   s.default,
-                    "type":      ext,
-                    "_selected": True,
-                })
-                logger.info(f"Subtitle -> external: {s.language}  url={sub_url[:80]}")
-                s.selected = False
+        workers = get_subtitle_resolve_workers()
+        if workers <= 1:
+            for s in candidates:
+                entry = self._resolve_external_subtitle(s)
+                if entry:
+                    new_ext_subs.append(entry)
+        else:
+            with ThreadPoolExecutor(max_workers=min(workers, len(candidates))) as ex:
+                for entry in ex.map(self._resolve_external_subtitle, candidates):
+                    if entry:
+                        new_ext_subs.append(entry)
 
         self.external_subtitles.extend(new_ext_subs)
         if new_ext_subs:

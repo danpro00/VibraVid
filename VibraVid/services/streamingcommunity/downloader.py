@@ -40,7 +40,7 @@ def download_film(select_title: Entries) -> str:
             console.print(f"[yellow][SKIP] Download aborted: TS/CAM version detected for '{select_title.name}'")
             return None
 
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} \n")
 
     tmdb_data = None
     if tmdb_client.api_key is not None:
@@ -76,7 +76,7 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     """
     start_message()
     series_display = getattr(scrape_serie, 'series_display_name', None) or scrape_serie.series_name
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{series_display} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{series_display} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
     # Define filename and path for the downloaded video
     path_components, filename = map_episode_path(series_display, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
@@ -112,12 +112,6 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
 def download_series(select_season: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None) -> None:
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - select_season (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection that bypasses manual input
-        - episode_selection (str, optional): Pre-defined episode selection that bypasses manual input
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     video_source = VideoSource(f"{site_constants.FULL_URL}/{select_season.provider_language}", True, select_season.id)

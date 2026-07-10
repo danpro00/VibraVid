@@ -1,6 +1,6 @@
 # 06.06.25
 
-from VibraVid.upload.version import __version__
+from VibraVid.utils.upload.version import __version__
 from VibraVid.core.ui.tracker import  DownloadTracker
 
 

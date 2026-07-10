@@ -7,7 +7,7 @@ from .hls import HLS_Downloader
 from .ism import ISM_Downloader
 from .mp4 import MP4_Downloader
 from ._generic import Generic_Downloader
-from ._detect import detect_stream_type
+from .util._detect import detect_stream_type
 
 
 __all__ = [
@@ -43,7 +43,7 @@ def download(
 
     if stype == "mp4":
         from VibraVid.utils import config_manager
-        from ._detect import derive_output_path
+        from .util._detect import derive_output_path
 
         ext = config_manager.config.get("PROCESS", "extension")
         path = output_path or derive_output_path(url, None, ext)

@@ -30,7 +30,7 @@ def download_film(select_title: Entries):
 
     # Get episode information
     episode_data = episodes[0]
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → ([cyan]{scrape_serie.get_name()}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> ([cyan]{scrape_serie.get_name()}) \n")
 
     # Define filename and path for the downloaded video
     serie_name_with_year = os_manager.get_sanitize_file(scrape_serie.get_name(), select_title.year)
@@ -64,7 +64,7 @@ def download_episode(episode_data, index_select, scrape_serie):
     episode_number = index_select + 1
     episode_name = f"Episode {episode_number}"
     series_name = scrape_serie.get_name()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{series_name} ([cyan]E{episode_number}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{series_name} ([cyan]E{episode_number}) \n")
 
     path_components, filename = map_episode_path(series_name=series_name, series_year=None, season_number=1, episode_number=episode_number, episode_name=episode_name, absolute_number=episode_number)
     episode_path = anime_folder(*path_components)
@@ -89,12 +89,6 @@ def download_episode(episode_data, index_select, scrape_serie):
 def download_series(select_title: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None):
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - select_season (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection that bypasses manual input
-        - episode_selection (str, optional): Pre-defined episode selection that bypasses manual input
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
 

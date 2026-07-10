@@ -1,6 +1,7 @@
 # 13.03.26
 
 import re
+import time
 import json
 import base64
 import binascii
@@ -74,6 +75,8 @@ class HLSParser:
         self._base_url = calc_base_url(m3u8_url)
 
     def fetch_manifest(self) -> bool:
+        start_parsing_time = time.time()
+
         if self._injected:
             self.raw_content = self._injected
             return True
@@ -84,6 +87,7 @@ class HLSParser:
                 local_path = Path(url2pathname(urlparse(self.m3u8_url).path))
                 self.raw_content = local_path.read_text(encoding="utf-8")
                 self._base_url = local_path.parent.as_uri() + "/"
+                logger.info(f"HlsParser:  parsed in {time.time() - start_parsing_time:.2f}s")
                 return True
             except Exception as exc:
                 console.print(f"[red]Failed to read local HLS manifest: {exc}.")
@@ -97,6 +101,7 @@ class HLSParser:
                 r = c.get(self.m3u8_url)
                 r.raise_for_status()
                 self.raw_content = r.text
+            logger.info(f"HlsParser: fetched and parsed in {time.time() - start_parsing_time:.2f}s")
             return True
         except Exception as exc:
             console.print(f"[red]Failed to fetch HLS manifest: {exc}.")

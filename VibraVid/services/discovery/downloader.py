@@ -26,7 +26,7 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     Downloads a specific episode from the specified season.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
     # Define filename and path for the downloaded video
     path_components, filename = map_episode_path(scrape_serie.series_name, getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
@@ -46,12 +46,6 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
 def download_series(select_season: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None) -> None:
     """
     Handle downloading a complete series.
-
-    Parameters:
-        select_season (Entries): Series metadata from search
-        season_selection (str, optional): Pre-defined season selection
-        episode_selection (str, optional): Pre-defined episode selection
-        scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if scrape_serie is None:

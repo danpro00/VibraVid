@@ -91,7 +91,7 @@ def detect_audio_offset(reference_path: str, target_path: str, max_offset_second
 
         max_lag = int(max_offset_seconds * sr)
 
-        logger.info("detect_audio_offset: running cross-correlation …")
+        logger.info("detect_audio_offset: running cross-correlation ...")
         corr = correlate(tgt_norm, ref_norm, mode="full")
         lags = np.arange(-(len(ref_norm) - 1), len(tgt_norm))
 
@@ -102,7 +102,7 @@ def detect_audio_offset(reference_path: str, target_path: str, max_offset_second
         offset_sec = float(best_lag) / sr
 
         direction = "Early" if offset_sec > 0 else "Late"
-        logger.info(f"detect_audio_offset: best_lag={best_lag} samples → offset={offset_sec:.3f} s ({Path(target_path).name} {direction} di {abs(offset_sec):.3f} s)")
+        logger.info(f"detect_audio_offset: best_lag={best_lag} samples -> offset={offset_sec:.3f} s ({Path(target_path).name} {direction} di {abs(offset_sec):.3f} s)")
         return offset_sec
 
     except Exception as exc:

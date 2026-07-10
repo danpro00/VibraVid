@@ -7,18 +7,19 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from VibraVid.utils import TVShowManager
-from VibraVid.utils.http_client import create_client, check_region_availability
+from VibraVid.utils.http_client import create_client, check_region_availability, get_userAgent
 from VibraVid.services._base import site_constants, EntriesManager, Entries
 from VibraVid.services._base.site_search_manager import base_process_search_result, base_search
 from VibraVid.core.ui.tracker import context_tracker
 
 from .downloader import download_series, download_film
 from .client import get_client, get_metadata_by_guid
+from .regions import region_conf, get_region
 
 
 indice = 3
 _useFor = "Film_Serie"
-_region = ["IT"]
+_region = ["IT", "ES"]
 msg = Prompt()
 console = Console()
 entries_manager = EntriesManager()
@@ -26,17 +27,48 @@ table_show_manager = TVShowManager()
 
 _SERIES_ID_RE = re.compile(r'(SE\d+)')
 _FILM_ID_RE = re.compile(r'(F\d{6,})')
+_ES_CONTENT_ID_RE = re.compile(r'"?app-reference-id"?[^M]{0,40}(M\d{10,})')
+_ES_FINDER_ID_RE = re.compile(r'finder/esp/(M\d{10,})')
 
 
 def register_cli_args(parser) -> list:
     """Register CLI options."""
-    group = parser.add_argument_group('Mediaset Infinity options (--site 3)')
-    group.add_argument('--url', dest='url', default=None, metavar='URL', help='Mediaset Infinity title URL (movie or series).')
-    return ['url']
+    group = parser.add_argument_group('Mediaset Infinity IT/ES options')
+    group.add_argument('--url', dest='url', default=None, metavar='URL', help='Mediaset Infinity title URL.')
+    group.add_argument('--country', dest='country', default='it', choices=['it', 'es'])
+    return ['url', 'country']
+
+
+def _resolve_es_url(url: str):
+    """Resolve a mediasetinfinity.es /player/ (or video) URL to a single downloadable item."""
+    try:
+        with create_client() as client:
+            resp = client.get(url, headers={'user-agent': get_userAgent()})
+            resp.raise_for_status()
+            html = resp.text
+    except Exception as e:
+        console.print(f"[red]Failed to fetch ES page: {e}")
+        return None
+
+    m = _ES_CONTENT_ID_RE.search(html) or _ES_FINDER_ID_RE.search(html)
+    if not m:
+        console.print("[red]Could not extract ES content id (M...) from the page. Make sure it is a /player/ URL.")
+        return None
+    content_id = m.group(1)
+
+    title_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+    name = title_match.group(1).strip() if title_match else content_id
+    name = re.sub(r'\s+Video$', '', name)  # trailing " Video" on ES player titles
+
+    console.print(f"[cyan]Detected ES content from URL: [green]{name} [white]({content_id})")
+    return {'id': content_id, 'name': name, 'type': 'film', 'url': url, 'year': '9999'}
 
 
 def _resolve_url_to_item(url: str):
-    """Resolve a Mediaset Infinity URL to an item dictionary containing metadata."""
+    """Resolve a Mediaset Infinity URL to an item dict (region-aware)."""
+    if get_region() == 'es':
+        return _resolve_es_url(url)
+
     series_match = _SERIES_ID_RE.search(url)
     if series_match:
         serie_id = series_match.group(1)
@@ -53,7 +85,6 @@ def _resolve_url_to_item(url: str):
         if not entry:
             console.print(f"[red]Could not resolve film metadata for id '{film_id}'")
             return None
-
         name = entry.get('title', film_id)
         year = str(entry.get('year')) if entry.get('year') else '9999'
         console.print(f"[cyan]Detected film from URL: [green]{name}")
@@ -79,36 +110,42 @@ def title_search(query: str) -> int:
     if not check_region_availability(_region, site_constants.SITE_NAME):
         return 0
 
-    class_mediaset_api = get_client()
-    search_url = 'https://mediasetplay.api-graph.mediaset.it/'
+    conf = region_conf()
+    api = get_client()
+    if not api.getHash256():
+        console.print("[yellow]Search not available for this region; use --url instead.")
+        return 0
+
+    search_url = conf['graphql_url']
     console.print(f"[cyan]Search url: [yellow]{search_url}")
 
     params = {
-        'extensions': f'{{"persistedQuery":{{"version":1,"sha256Hash":"{class_mediaset_api.getHash256()}"}}}}',
+        'extensions': f'{{"persistedQuery":{{"version":1,"sha256Hash":"{api.getHash256()}"}}}}',
         'variables': f'{{"first":10,"property":"search","query":"{query}","uxReference":"filteredSearch"}}',
     }
-    
     try:
-        with create_client(headers=class_mediaset_api.generate_request_headers()) as client:
+        with create_client(headers=api.generate_request_headers()) as client:
             response = client.get(search_url, params=params)
         response.raise_for_status()
     except Exception as e:
         console.print(f"[red]Site: {site_constants.SITE_NAME}, request search error: {e}")
         return 0
 
-    # Parse response
     resp_json = response.json()
-    items = resp_json.get("data", {}).get("getSearchPage", {}).get("areaContainersConnection", {}).get("areaContainers", [])[0].get("areas", [])[0].get("sections", [])[0].get("collections", [])[0].get("itemsConnection", {}).get("items", [])
+    try:
+        items = resp_json["data"]["getSearchPage"]["areaContainersConnection"]["areaContainers"][0]["areas"][0]["sections"][0]["collections"][0]["itemsConnection"]["items"]
+    except (TypeError, KeyError, IndexError):
+        console.print("[yellow]No search results.")
+        return 0
 
-    # Process items
+    image_base_url = "https://img-prod-api2.mediasetplay.mediaset.it/api/images"
     for item in items:
         try:
-            is_series = (item.get("__typename") == "SeriesItem" or item.get("cardLink", {}).get("referenceType") == "series"or bool(item.get("seasons")))
+            is_series = (item.get("__typename") == "SeriesItem" or item.get("cardLink", {}).get("referenceType") == "series" or bool(item.get("seasons")))
             item_type = "tv" if is_series else "film"
         except Exception:
             break
 
-        # Get date
         date = item.get("year") or ''
         if not date:
             updated = item.get("updated") or item.get("r") or ''
@@ -117,21 +154,18 @@ def title_search(query: str) -> int:
                     date = datetime.fromisoformat(str(updated).replace("Z", "+00:00")).year
                 except Exception:
                     date = ''
-        
-        # Get poster image
-        images = item.get("cardImages", [])
-        vertical_image = None
 
-        for img in images:
+        vertical_image = None
+        for img in item.get("cardImages", []):
             if img.get("sourceType") == "image_vertical" or img.get("type") == "image_vertical":
                 vertical_image = img
                 break
-    
-        image_base_url = "https://img-prod-api2.mediasetplay.mediaset.it/api/images"
-        image_url = f"{image_base_url}/{vertical_image.get('engine', 'mse')}/v5/ita/{vertical_image.get('id', '')}/image_vertical/300/450"
-        if vertical_image.get("r", ""):
-            image_url += f"?r={vertical_image.get('r', '')}"
-        
+        image_url = ''
+        if vertical_image:
+            image_url = f"{image_base_url}/{vertical_image.get('engine', 'mse')}/v5/{conf['image_region']}/{vertical_image.get('id', '')}/image_vertical/300/450"
+            if vertical_image.get("r", ""):
+                image_url += f"?r={vertical_image.get('r', '')}"
+
         entries_manager.add(Entries(
             id=item.get("guid", ""),
             name=item.get("cardTitle", "No Title"),

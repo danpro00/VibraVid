@@ -15,7 +15,7 @@ from VibraVid.core.ui.tracker import download_tracker, context_tracker
 from VibraVid.core.utils.media_players import MediaPlayers
 
 from VibraVid.core.velora.downloader import MediaDownloader
-from VibraVid.core.velora.download_utils import parse_max_time as _parse_max_time
+from VibraVid.core.velora.util.formatting import parse_max_time as _parse_max_time
 
 from VibraVid.core.drm.manager import DRMManager
 from VibraVid.core.drm.system import DRMType, _DRMSystems
@@ -132,7 +132,7 @@ class HLS_Downloader(BaseDownloader):
                     if kid_val and kid_val != "N/A":
                         try:
                             pssh = _DRMSystems.build_widevine_pssh_from_kid(kid_val)
-                            logger.info(f"HLS: synthesized Widevine PSSH from KID {kid_val[:8]}…")
+                            logger.info(f"HLS: synthesized Widevine PSSH from KID {kid_val}")
                         except Exception as exc:
                             logger.debug(f"HLS: Widevine PSSH synthesis failed: {exc}")
 
@@ -170,7 +170,7 @@ class HLS_Downloader(BaseDownloader):
                     content = f.read()
 
             parser = M3U8Parser(self.m3u8_url, self.headers, content=content)
-            drm_info = (parser.get_drm_info())  # → {'widevine': [...], 'playready': [...], 'fairplay': [...]}
+            drm_info = (parser.get_drm_info())  # -> {'widevine': [...], 'playready': [...], 'fairplay': [...]}
 
             for entry in drm_info.get("widevine", []):
                 result[DRMType.WIDEVINE].append({"pssh": entry["pssh"], "kid": entry.get("kid", "N/A"), "type": "Widevine"})

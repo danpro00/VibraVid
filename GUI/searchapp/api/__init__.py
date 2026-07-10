@@ -15,7 +15,6 @@ _PREFERRED_ORDER = [
     'animeunity',
     'animeworld',
     'crunchyroll',
-    'primevideo',
     'mediasetinfinity',
     'raiplay',
     'discoveryplus',
@@ -29,7 +28,6 @@ _PREFERRED_ORDER = [
     'cinezo',
     'mostraguarda',
     'eurostreaming',
-    'spotify',
 ]
 _SITE_CATEGORIES: Dict[str, str] = {}
 
@@ -97,7 +95,6 @@ def _initialize_registry():
             for err in load_errors:
                 print(f"  - {err}")
     else:
-        print(f"[Info] Loaded {len(_API_REGISTRY)} streaming APIs: {', '.join(_API_REGISTRY.keys())}")
         if load_errors:
             print(f"[Warning] {len(load_errors)} API(s) failed to load:")
             for err in load_errors:

@@ -36,7 +36,6 @@ def rand_a32(n: int) -> List[int]:
     return bytes_to_a32(os.urandom(n * 4))
 
 def attr_key(k: List[int]) -> List[int]:
-    """De-obfuscated AES key from a full 8-word file key."""
     return [k[0] ^ k[4], k[1] ^ k[5], k[2] ^ k[6], k[3] ^ k[7]]
 
 def _nonce8(ul_key: List[int]) -> bytes:
@@ -89,7 +88,6 @@ def pick_pool_entry(pool: list, size: int) -> list:
     return pool[-1]
 
 def upload_file(session, file_path: str, pool: list, ul_key: List[int], concurrency: int = 4, on_progress: Optional[Callable[..., None]] = None) -> Tuple[bytes, List[bytes]]:
-    """Encrypt + upload *file_path* directly to the storage nodes"""
     size = os.path.getsize(file_path)
     entry = pick_pool_entry(pool, size)
     base = f"https://{entry[0]}/{entry[1]}"
@@ -147,7 +145,6 @@ def upload_file(session, file_path: str, pool: list, ul_key: List[int], concurre
     return token, [m for m in macs if m is not None]
 
 def download_file(session, url: str, dest_path: str, node_key_a32: List[int], total: Optional[int] = None, on_progress: Optional[Callable[..., None]] = None, chunk_size: int = 1 << 20) -> str:
-    """Download from a storage URL and AES-CTR decrypt to *dest_path*."""
     aes_key = a32_to_bytes(attr_key(node_key_a32))
     nonce8 = a32_to_bytes([node_key_a32[4], node_key_a32[5]])
     ctr = Counter.new(64, prefix=nonce8, initial_value=0)

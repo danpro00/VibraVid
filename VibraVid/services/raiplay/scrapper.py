@@ -2,6 +2,7 @@
 
 import re
 import logging
+import threading
 
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.services._base.object import SeasonManager, Episode, Season
@@ -21,6 +22,7 @@ class GetSerieInfo:
         self.seasons_manager = SeasonManager()
         self.season_block_mapping = {}      # Map season number to block_id
         self.all_seasons_data = []          # Store all seasons before filtering
+        self._collect_lock = threading.Lock()
 
     def collect_info_title(self) -> None:
         """Get series info including seasons from all multimedia blocks."""
@@ -169,25 +171,23 @@ class GetSerieInfo:
 
     # ------------- FOR GUI -------------
     def getNumberSeason(self) -> int:
-        """
-        Get the total number of seasons available for the series.
-        """
-        if not self.seasons_manager.seasons:
-            self.collect_info_title()
-            
+        """Get the total number of seasons available for the series."""
+        with self._collect_lock:
+            if not self.seasons_manager.seasons:
+                self.collect_info_title()
+
         return len(self.seasons_manager.seasons)
-    
+
     def getEpisodeSeasons(self, season_number: int) -> list:
-        """
-        Get all episodes for a specific season.
-        """
+        """Get all episodes for a specific season."""
         season = self.seasons_manager.get_season_by_number(season_number)
 
         if not season:
             logger.error(f"Season {season_number} not found")
             return []
-            
-        if not season.episodes.episodes:
-            self.collect_info_season(season_number)
-            
+
+        with self._collect_lock:
+            if not season.episodes.episodes:
+                self.collect_info_season(season_number)
+
         return season.episodes.episodes

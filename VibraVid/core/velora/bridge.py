@@ -8,11 +8,12 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from VibraVid.setup import get_velora_path
-from VibraVid.core.velora.download_utils import normalize_path_key, format_size, format_speed, estimate_total_size
+from VibraVid.core.velora.util.formatting import normalize_path_key, format_size, format_speed, estimate_total_size
 
 
 logger = logging.getLogger("velora_bridge")
@@ -20,6 +21,7 @@ _QUEUE_SENTINEL = object()
 _EVENT_CB_LOCK = threading.Lock()
 _PROGRESS_CB_LOCK = threading.Lock()
 DEFAULT_WAIT_TIMEOUT_SECONDS = 900.0
+SPEED_WINDOW_SECONDS = 3.0
 
 
 def _safe_event_cb(event_cb: Optional[Callable[[Dict[str, Any]], None]], event: Dict[str, Any]) -> None:
@@ -237,6 +239,8 @@ def run_download_plan(plan: Dict[str, Any], progress_cb: Optional[Callable[[int,
     done_count = 0
     total_bytes = 0
     started_at = time.monotonic()
+    speed_window: "deque[tuple[float, int]]" = deque()
+    speed_window.append((started_at, 0))
 
     try:
         # Write plan to a temp file.
@@ -335,7 +339,8 @@ def run_download_plan(plan: Dict[str, Any], progress_cb: Optional[Callable[[int,
             event_name = (event.get("event") or "").lower()
 
             if event_name in {"start", "summary"}:
-                logger.debug(_format_bridge_event(event))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(_format_bridge_event(event))
                 continue
 
             if event_name == "retry":
@@ -367,13 +372,18 @@ def run_download_plan(plan: Dict[str, Any], progress_cb: Optional[Callable[[int,
                 continue
 
             if event_name == "completed" or "path" in event:
-                logger.debug(_format_bridge_event(event))
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(_format_bridge_event(event))
                 done_count += 1
                 bytes_written = int(event.get("bytes") or 0)
                 total_bytes += bytes_written
 
-                elapsed = max(time.monotonic() - started_at, 0.001)
-                speed = total_bytes / elapsed
+                now = time.monotonic()
+                speed_window.append((now, total_bytes))
+                while len(speed_window) > 1 and now - speed_window[0][0] > SPEED_WINDOW_SECONDS:
+                    speed_window.popleft()
+                window_start_at, window_start_bytes = speed_window[0]
+                speed = (total_bytes - window_start_bytes) / max(now - window_start_at, 0.001)
                 _safe_progress_cb(progress_cb, done_count, total, total_bytes, speed)
 
                 progress_event = dict(event)

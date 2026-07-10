@@ -43,7 +43,7 @@ def download_episode(obj_episode, index_select, scrape_serie, video_source):
     Downloads a specific episode from the specified season.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} ([cyan]E{obj_episode.number}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} ([cyan]E{obj_episode.number}) \n")
 
     # Collect mp4 url
     video_source.get_embed(obj_episode.id, not DOWNOAD_HLS)
@@ -109,12 +109,6 @@ def _get_episode_by_number_or_index(scrape_serie, episode_number: int):
 def download_series(select_title: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie = None):
     """
     Handle downloading a complete series.
-
-    Parameters:
-        - select_season (Entries): Series metadata from search
-        - season_selection (str, optional): Pre-defined season selection that bypasses manual input
-        - episode_selection (str, optional): Pre-defined episode selection that bypasses manual input
-        - scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if scrape_serie is None:

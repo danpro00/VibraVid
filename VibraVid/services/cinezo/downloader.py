@@ -24,7 +24,7 @@ extension_output = config_manager.config.get("PROCESS", "extension")
 def download_film(select_title: Entries):
     """Download a movie from Cinezo."""
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name}\n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name}\n")
 
     tmdb_id = getattr(select_title, 'id', None) or getattr(select_title, 'tmdb_id', None)
     if not tmdb_id:
@@ -56,7 +56,7 @@ def download_film(select_title: Entries):
 def download_episode(obj_episode, index: int, scrape_serie: GetSerieInfo, season_number: int):
     """Download a single episode from Cinezo."""
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} (S{season_number}E{obj_episode.number})\n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} (S{season_number}E{obj_episode.number})\n")
 
     m3u8_url, stream_headers, subtitle_tracks = get_stream(
         scrape_serie.tmdb_id, 'tv',

@@ -9,7 +9,7 @@ from typing import Optional
 from VibraVid.utils.os import internet_manager
 from VibraVid.core.ui.tracker import context_tracker, download_tracker
 from VibraVid.core.ui.bar_manager import console
-from VibraVid.core.velora.download_utils import parse_max_time
+from VibraVid.core.velora.util.formatting import parse_max_time
 
 
 logger = logging.getLogger(__name__)

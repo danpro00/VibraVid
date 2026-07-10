@@ -1,3 +1,5 @@
+# 22.02.25
+
 import signal
 import time
 
@@ -8,9 +10,6 @@ console = Console()
 
 
 class InterruptHandler:
-    """
-    Tracks Ctrl-C presses and decides when to abort cleanly vs. force-quit.
-    """
     def __init__(self) -> None:
         self.interrupt_count:     int   = 0
         self.last_interrupt_time: float = 0.0

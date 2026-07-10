@@ -49,10 +49,10 @@ def download_live(select_title: Entries):
     Downloads a live event using the provided Entries information.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} [magenta](LIVE)\n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} [magenta](LIVE)\n")
 
     scrape_content = GetLiveInfo(select_title.id)
-    edit_id = scrape_content.get_edit_id()
+    edit_id = getattr(select_title, 'edit_id', None) or scrape_content.get_edit_id()
 
     if not edit_id:
         console.print(f"[red]Error: Could not get edit ID for live event {select_title.name}")
@@ -86,12 +86,17 @@ def download_film(select_title: Entries):
     Downloads a film using the provided Entries information.
     """
     start_message()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{select_title.name} \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} \n")
     
-    # Get standalone content info
-    scrape_content = GetStandaloneInfo(select_title.id)
-    edit_id = scrape_content.get_edit_id()
-    
+    # The edit ID is usually already known from the search result (video-type
+    # entries carry it directly). GetStandaloneInfo's /cms/routes/movie route
+    # only applies to show-type standalone movies, not to STANDALONE_EVENT
+    # videos, so only fall back to it when we don't already have one.
+    edit_id = getattr(select_title, 'edit_id', None)
+    if not edit_id:
+        scrape_content = GetStandaloneInfo(select_title.id)
+        edit_id = scrape_content.get_edit_id()
+
     if not edit_id:
         console.print(f"[red]Error: Could not get edit ID for {select_title.name}")
         return False
@@ -120,7 +125,7 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     """
     start_message()
     client = get_client()
-    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} → [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
+    console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{scrape_serie.series_name} [white]\\ [magenta]{obj_episode.name} ([cyan]S{index_season_selected}E{index_episode_selected}) \n")
 
     # Define output path
     path_components, filename = map_episode_path(scrape_serie.series_name,getattr(scrape_serie, 'year', None), index_season_selected, index_episode_selected, obj_episode.name)
@@ -142,12 +147,6 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
 def download_series(select_season: Entries, season_selection: str = None, episode_selection: str = None, scrape_serie=None) -> None:
     """
     Handle downloading a complete series
-    
-    Parameters:
-        select_season (Entries): Series metadata from search
-        season_selection (str, optional): Pre-defined season selection
-        episode_selection (str, optional): Pre-defined episode selection
-        scrape_serie (Any, optional): Pre-existing scraper instance to avoid recreation
     """
     start_message()
     if not scrape_serie:

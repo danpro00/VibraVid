@@ -122,7 +122,7 @@ class _DRMSystems(dict):
             raise ValueError(f"KID must be 32 hex chars, got {len(kid)}: {kid_hex!r}")
 
         kid_bytes = bytes.fromhex(kid)
-        wv_system_id = bytes.fromhex("edef8ba979d64acea3c827dcd51d21ed")
+        wv_system_id = bytes.fromhex(_SYSTEMS_DATA["WIDEVINE"][0])
         data = b"\x12\x10" + kid_bytes
         inner = b"\x00\x00\x00\x00" + wv_system_id + struct.pack(">I", len(data)) + data
         box = struct.pack(">I", 8 + len(inner)) + b"pssh" + inner

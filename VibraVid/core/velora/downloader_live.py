@@ -14,10 +14,10 @@ from VibraVid.core.decryptor import Decryptor
 from VibraVid.utils.http_client import create_client
 from VibraVid.utils import config_manager
 
-from VibraVid.core.velora.download_utils import format_size as _fmt_size, format_speed as _fmt_speed, fmt_dur as _fmt_dur
+from VibraVid.core.velora.util.formatting import format_size as _fmt_size, format_speed as _fmt_speed, fmt_dur as _fmt_dur
 
-from ._hls_utils import hls_base_url, parse_hls_live_playlist
-from ._stream_helpers import detect_seg_ext
+from .util._hls import hls_base_url, parse_hls_live_playlist
+from .util._stream_helpers import detect_seg_ext, merged_segment_ext
 from ..decryptor._segment_crypto import decrypt_aes128
 
 
@@ -125,7 +125,7 @@ class LiveDownloadMixin:
         stream_dir:   Path = self._make_stream_dir(stream, "hls")
 
         key_cache:     Dict[str, bytes] = {}
-        all_paths:     List[Path]       = []   # ordered: [init, media_1, media_2, …]
+        all_paths:     List[Path]       = []   # ordered: [init, media_1, media_2, ...]
         seen_seg_keys: set              = set()
 
         # 0 is reserved for the init segment; media segments start at 1.
@@ -368,10 +368,11 @@ class LiveDownloadMixin:
             logger.error("Live HLS: no segments were downloaded — nothing to merge")
             return
 
-        sample_url = last_fresh_segs[0]["url"] if last_fresh_segs else ""
-        ext = detect_seg_ext(sample_url, default="ts")
-        if ext == "m4s":
-            ext = "mp4"
+        sample_url = next(
+            (s["url"] for s in last_fresh_segs if s.get("seg_type") != "init"),
+            last_fresh_segs[0]["url"] if last_fresh_segs else "",
+        )
+        ext = merged_segment_ext(sample_url, default="ts")
 
         out_path   = self.output_dir / self._out_filename(stream, ext)
         merge_size = sum(p.stat().st_size for p in all_paths if p.exists())
@@ -380,10 +381,46 @@ class LiveDownloadMixin:
         _emit_merge_progress(bar_manager, task_key, seg_done, merge_size)
         binary_merge_segments(all_paths, out_path, merge_logger=logger)
 
-        if out_path.exists() and out_path.stat().st_size > 0:
-            logger.info(f"Live HLS merge complete | segs={len(all_paths)} -> {out_path.name} ({_fmt_size(out_path.stat().st_size)})")
-        else:
+        if not (out_path.exists() and out_path.stat().st_size > 0):
             logger.error(f"Live HLS binary merge produced an empty file: {out_path}")
+            return
+
+        # Post-merge decryption for SAMPLE-AES/CBCS (mirrors the non-live generic path in downloader.py)
+        stream_is_encrypted = getattr(getattr(stream, "drm", None), "method", None) is not None
+        if (not live_decryption) and self.key and stream_is_encrypted:
+            post_merge_path = out_path.with_suffix(out_path.suffix + ".dec")
+            def _decrypt_cb(parsed):
+                if not parsed:
+                    return
+                
+                bar_manager.handle_progress_line({
+                    "task_key": task_key,
+                    "pct":      parsed.get("pct"),
+                    "speed":    parsed.get("status") or "Decrypt",
+                })
+
+            try:
+                decryptor = Decryptor()
+                if decryptor.decrypt(str(out_path), self.key, str(post_merge_path), stream_type=stream.type, progress_cb=_decrypt_cb):
+                    try:
+                        out_path.unlink(missing_ok=True)
+                        post_merge_path.rename(out_path)
+                        bar_manager.handle_progress_line({"task_key": task_key, "pct": 100})
+                    except Exception as exc:
+                        logger.error(f"Live HLS: decrypt rename failed: {exc}")
+                        post_merge_path.unlink(missing_ok=True)
+                        
+                else:
+                    kid_hint = ", ".join(stream.drm.get_all_kids()) if stream.drm else ""
+                    logger.warning(f"Live HLS: post-merge decryption failed for {out_path.name} (kid={kid_hint or 'unknown'})")
+                    console.print(f"[bold red][!] WARNING[/bold red] Live HLS decryption failed for [yellow]{stream.type}[/yellow]" + (f" (KID(s): [magenta]{kid_hint}[/magenta])" if kid_hint else ""))
+                    post_merge_path.unlink(missing_ok=True)
+
+            except Exception as exc:
+                logger.error(f"Live HLS: post-merge decryption error: {exc}")
+                post_merge_path.unlink(missing_ok=True)
+
+        logger.info(f"Live HLS merge complete | segs={len(all_paths)} -> {out_path.name} ({_fmt_size(out_path.stat().st_size)})")
 
     def _download_dash_live_stream(self, stream, bar_manager, live_decryption: bool = False, *, mpd_url: str, headers: Dict) -> None:
         """

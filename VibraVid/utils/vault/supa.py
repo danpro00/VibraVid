@@ -150,7 +150,7 @@ class ExternalSupaDBVault:
             "pssh": pssh,
         }
 
-        logger.debug(f"Supabase get_keys_by_pssh: license_url={base_license_url}, pssh={pssh[:20]}…")
+        logger.debug(f"Supabase get_keys_by_pssh: license_url={base_license_url}, pssh={pssh[:20]}...")
         result = self._post("get-keys", payload)
         logger.debug(f"Vault response for get_keys_by_pssh: {result}")
 

@@ -5,7 +5,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from VibraVid.core.decryptor._mp4_inspector import parse_binary
+from VibraVid.core.decryptor._models import detect_encryption_info
 from VibraVid.core.drm.system import KNOWN_DRM_SYSTEMS
 from VibraVid.utils.os import os_manager
 
@@ -19,10 +19,7 @@ class DRMProbe:
         self._systems: dict[str, str] = (known_systems if known_systems is not None else KNOWN_DRM_SYSTEMS)
 
     def probe(self, url: str, headers: dict, client) -> tuple:
-        """
-        Returns ``(encrypted: bool, scheme: str | None, drm_names: list[str])``.
-        Never raises — all errors are caught and logged at DEBUG level.
-        """
+        """Returns ``(encrypted: bool, scheme: str | None, drm_names: list[str])``."""
         try:
             raw = self._fetch_bytes(url, headers, client)
             if not raw:
@@ -41,7 +38,27 @@ class DRMProbe:
             logger.debug(f"DRMProbe failed (non-fatal): {exc}")
             return False, None, []
 
+    def inspect(self, raw: bytes) -> tuple:
+        """Inspect already-downloaded bytes (in-flight probe, no second request)."""
+        try:
+            if not raw:
+                return False, None, []
+
+            info = self._parse_bytes(raw)
+            if not info.encrypted:
+                logger.debug("DRMProbe: no encryption markers found in first 4 MB.")
+                return False, None, []
+
+            drm_names = self._resolve_drm_names(info.pssh_boxes)
+            self._report(info.scheme, info.kid, drm_names)
+            return True, info.scheme, drm_names
+
+        except Exception as exc:
+            logger.debug(f"DRMProbe.inspect failed (non-fatal): {exc}")
+            return False, None, []
+
     def _fetch_bytes(self, url: str, headers: dict, client) -> Optional[bytes]:
+        """Fetch the first 4 MB of the URL using a Range request, returning the raw bytes (or None on failure)."""
         probe_headers = {**headers, "Range": f"bytes=0-{PROBE_BYTES - 1}"}
         resp = client.get(url, headers=probe_headers, timeout=15)
 
@@ -54,9 +71,9 @@ class DRMProbe:
 
     @staticmethod
     def _parse_bytes(raw: bytes):
-        """Write *raw* to a temp file, run ``parse_binary``, then delete."""
+        """Write *raw* to a temp file, run ``detect_encryption_info``, then delete."""
         with os_manager.temp_binary_file(raw, suffix=".mp4probe") as tmp_path:
-            return parse_binary(tmp_path)
+            return detect_encryption_info(tmp_path)
 
     def _resolve_drm_names(self, pssh_boxes: list) -> list:
         """Given a list of PSSH boxes, return a list of known DRM system names (if any) and log any unknown system IDs."""
@@ -96,6 +113,7 @@ class DRMProbe:
 
     @staticmethod
     def _report(scheme: Optional[str], kid: Optional[str], drm_names: list) -> None:
+        """Log and print a summary of the detected encryption info."""
         label = ", ".join(drm_names) if drm_names else "unknown DRM"
         logger.info(f"DRMProbe: encryption detected — scheme={scheme or 'unknown'}, kid={kid or 'n/a'}, DRM=[{label}]")
-        console.print(f"[cyan]Probe: [magenta]Encrypted [white]| [cyan]scheme: [magenta]{scheme or 'unknown'} [white]| [cyan]DRM: [magenta]{label}")
+        console.print(f"\n[cyan]Probe: [magenta]Encrypted [white]| [cyan]scheme: [magenta]{scheme or 'unknown'} [white]| [cyan]DRM: [magenta]{label}")

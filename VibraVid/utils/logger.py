@@ -74,12 +74,8 @@ def setup_logger(name=None, no_log: bool = False):
                 encoding='utf-8'
             )
             file_handler.setFormatter(log_format)
-            file_handler.setLevel(LOG_LEVEL)  # ← era fisso a INFO, ora usa la variabile
+            file_handler.setLevel(LOG_LEVEL)
             root_logger.addHandler(file_handler)
-
-            # Replay records captured before the handler existed (config load,
-            # domains/update/velora requests) so they land in the log file in
-            # chronological order, before the init marker below.
             flush_startup_buffer(file_handler)
 
             logging.captureWarnings(True)

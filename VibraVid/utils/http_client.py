@@ -19,6 +19,7 @@ from VibraVid.utils import config_manager
 
 logger = logging.getLogger(__name__)
 ua = ua_generator.generate(device="desktop", browser=("chrome", "edge"))
+_VALID_PROXY_SCOPES = ("scrap", "down", "scrap+down")
 
 
 def _use_proxy() -> bool:
@@ -26,6 +27,15 @@ def _use_proxy() -> bool:
         return bool(config_manager.config.get_bool("REQUESTS", "use_proxy", default=False))
     except Exception:
         return False
+
+
+def _get_proxy_scope() -> str:
+    try:
+        scope = config_manager.config.get("REQUESTS", "proxy_scope", str, default="scrap+down")
+        scope = (scope or "").strip().lower()
+        return scope if scope in _VALID_PROXY_SCOPES else "scrap+down"
+    except Exception:
+        return "scrap+down"
 
 
 def _get_timeout() -> int:
@@ -42,8 +52,7 @@ def _get_verify() -> bool:
         return True
 
 
-def _get_proxies() -> Optional[Dict[str, str]]:
-    """Return proxies dict if proxy use is enabled and proxy config is present, else None."""
+def _raw_proxies() -> Optional[Dict[str, str]]:
     if not _use_proxy():
         return None
 
@@ -59,9 +68,16 @@ def _get_proxies() -> Optional[Dict[str, str]]:
         return None
 
 
+def _get_proxies() -> Optional[Dict[str, str]]:
+    if _get_proxy_scope() not in ("scrap", "scrap+down"):
+        return None
+    return _raw_proxies()
+
+
 def get_proxy_url() -> Optional[str]:
-    """Return a single proxy URL string suitable for passing to the C# download binary."""
-    proxies = _get_proxies()
+    if _get_proxy_scope() not in ("down", "scrap+down"):
+        return None
+    proxies = _raw_proxies()
     if not proxies:
         return None
     return proxies.get("https") or proxies.get("http") or next(iter(proxies.values()), None)

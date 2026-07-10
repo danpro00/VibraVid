@@ -165,7 +165,7 @@ def _update_docker() -> dict:
 
 def _update_installer() -> dict:
     try:
-        from VibraVid.upload.update import auto_update
+        from VibraVid.utils.upload.update import auto_update
     except Exception as exc:
         return {"success": False, "message": f"auto_update non disponibile: {exc}"}
 

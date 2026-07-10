@@ -4,7 +4,7 @@ import re
 import logging
 from typing import Optional
 
-from ._mp4_inspector import extract_widevine_kid
+from ._models import extract_widevine_kid
 
 logger = logging.getLogger(__name__)
 

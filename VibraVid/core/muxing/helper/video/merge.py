@@ -112,6 +112,6 @@ def binary_merge_segments(paths: list[Path], output_path: Path, merge_logger: lo
         log.info(f"[binary_merge] stripped PNG wrapper from {png_wrapped}/{len(valid)} segment(s)")
 
     if output_path.exists() and output_path.stat().st_size > 0:
-        log.info(f"[binary_merge] raw concat OK: {output_path.name} ({_merge_fmt_size(total_written)})")
+        log.debug(f"[binary_merge] raw concat OK: {output_path.name} ({_merge_fmt_size(total_written)})")
     else:
         log.error(f"[binary_merge] output is empty or missing: {output_path}")

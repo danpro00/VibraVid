@@ -1,15 +1,17 @@
 # 12.01.25
 
+import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from VibraVid.utils.http_client import create_async_client, get_proxy_url
 from VibraVid.utils import config_manager
 from VibraVid.core.utils.language import resolve_locale
 from VibraVid.core.velora.bridge import run_download_plan
 from VibraVid.core.utils.codec import SUBTITLE_EXTENSIONS, AUDIO_EXTENSIONS
+from VibraVid.core.velora.util._subtitle_segments import get_subtitle_resolve_workers, download_and_merge_subtitle_segments
 
 
 logger = logging.getLogger("SubtitleDownloader")
@@ -146,7 +148,7 @@ async def resolve_url(client: Any, url: str, track_type: str) -> Tuple[str, str]
             if line and not line.startswith("#"):
                 absolute_url = urljoin(url, line)
                 fmt = ext_from_url(absolute_url, "UNK")
-                logger.info(f"Resolved manifest → segment: {line} (fmt={fmt})")
+                logger.info(f"Resolved manifest -> segment: {line} (fmt={fmt})")
                 return absolute_url, fmt
 
         logger.error(f"Manifest parsed but no segment found in {url!r}")
@@ -156,9 +158,126 @@ async def resolve_url(client: Any, url: str, track_type: str) -> Tuple[str, str]
     return url, fmt
 
 
+async def _download_multi_segment_subtitle(client: Any, track: Dict, out_path: Path, fmt: str) -> Optional[int]:
+    """Fetch every HLS subtitle segment for *track* and merge them into *out_path*."""
+    segments = [(seg["url"], seg.get("duration", 0.0)) for seg in track["segments"]]
+    merged = await download_and_merge_subtitle_segments(client, segments)
+    data = merged.encode("utf-8")
+    out_path.write_bytes(data)
+    return len(data)
+
+
+async def _process_external_track(client: Any, headers: Dict, track: Dict, track_type: str, output_dir: Path, bar_manager: Any, stop_check: Any) -> Tuple[str, Optional[Dict]]:
+    lang_raw = (track.get("language") or "unknown").strip()
+
+    # Use track's extension as fallback if provided
+    track_ext = track.get("extension", "UNK").lower().lstrip(".")
+    fmt: str = ext_from_url(track.get("url", ""), track_ext)
+    base_lang, flag_suffix = normalize_sub_filename(lang_raw, track)
+    logger.debug(f"Prepared to download track: lang_raw={lang_raw}, base_lang={base_lang}, flag_suffix={flag_suffix}, ext={fmt}, url={track.get('url')}")
+
+    segments: List[Dict] = (track.get("segments") or []) if track_type == "subtitle" else []
+    is_multi_segment = len(segments) > 1
+
+    try:
+        final_url = track.get("url", "")
+        if not is_multi_segment:
+            raw_url = track["url"]
+            final_url, fmt = await resolve_url(client, raw_url, track_type)
+
+            # If format is still UNK and track provides extension, use it
+            if fmt == "UNK" and track.get("extension"):
+                fmt = (track.get("extension") or "").lower().lstrip(".")
+                logger.debug(f"Using track extension for {track_type}: {fmt}")
+
+        if not is_valid_format(fmt, track_type):
+            logger.error(f"Skipping {track_type} with invalid format '{fmt}' for {lang_raw}: {track.get('url')}")
+            return track_type, None
+
+        # ── Build normalised filename ─────────────────────────────
+        base_lang, flag_suffix = normalize_sub_filename(lang_raw, track)
+        out_path = output_dir / f"{base_lang}{flag_suffix}.{fmt}"
+        task_key = track.get("_task_key", f"ext_{track_type}_{base_lang}{flag_suffix}")
+        new_label = build_ext_track_label(track, track_type, ext_override=fmt)
+        display_label = build_ext_track_label(track, track_type, ext_override=fmt, plain=True)
+
+        logger.info(f"Downloading external {track_type}: {lang_raw} -> {out_path.name}" + (f" ({len(segments)} segments)" if is_multi_segment else ""))
+
+        if is_multi_segment:
+            size = await _download_multi_segment_subtitle(client, track, out_path, fmt)
+            bar_manager.handle_progress_line({
+                "task_key": task_key,
+                "label": new_label,
+                "display_label": display_label,
+                "pct": 100,
+                "segments": f"{len(segments)}/{len(segments)}",
+            })
+        else:
+            plan = {
+                "project": "Velora",
+                "task_key": task_key,
+                "label": new_label,
+                "display_label": display_label,
+                "concurrency": 1,
+                "retry_count": config_manager.config.get_int("REQUESTS", "max_retry"),
+                "timeout_seconds": config_manager.config.get_int("REQUESTS", "timeout"),
+                "proxy_url": get_proxy_url(),
+                "verify_tls": config_manager.config.get_bool("REQUESTS", "verify"),
+                "headers": headers,
+                "tasks": [
+                    {
+                        "task_key": task_key,
+                        "label": new_label,
+                        "display_label": display_label,
+                        "url": final_url,
+                        "path": str(out_path),
+                        "headers": {},
+                    }
+                ],
+            }
+            results = run_download_plan(plan, event_cb=bar_manager.handle_progress_line, stop_check=stop_check)
+            result = results[0] if results else {}
+            size = int(result.get("bytes") or 0) if result.get("path") and Path(result["path"]).exists() else None
+
+        if size:
+            entry = {
+                "path": str(out_path),
+                "language": f"{base_lang}{flag_suffix}",
+                "type": fmt,
+                "size": size,
+            }
+            logger.info(f"Downloaded {track_type} {lang_raw}: {size} bytes -> {out_path.name}")
+            return track_type, entry
+
+        logger.error(f"Failed to download {track_type} {lang_raw} (empty file)")
+        bar_manager.handle_progress_line(
+            {
+                "task_key": task_key,
+                "label": new_label,
+                "display_label": display_label,
+                "segments": "0/1",
+                "speed": "FAILED",
+            }
+        )
+        return track_type, None
+
+    except Exception as exc:
+        logger.error(f"External {track_type} download failed ({track.get('language', '?')}): {exc}")
+        bar_manager.handle_progress_line(
+            {
+                "task_key": track.get("_task_key", f"ext_{track_type}_{base_lang}{flag_suffix}"),
+                "label": build_ext_track_label(track, track_type, ext_override=fmt),
+                "display_label": build_ext_track_label(track, track_type, ext_override=fmt, plain=True),
+                "segments": "0/1",
+                "speed": "ERR",
+            }
+        )
+        return track_type, None
+
+
 async def download_external_tracks_with_progress(headers: Dict, external_subtitles: List[Dict], external_audios: List[Dict], output_dir: Path, filename: str, bar_manager: Any, stop_check: Any = None) -> Tuple[List[Dict], List[Dict]]:
     """Download external tracks with manifest resolution, proper filenames, and progress.
-    
+
     Args:
         stop_check: Optional callable that returns True when download should stop.
     """
@@ -176,100 +295,26 @@ async def download_external_tracks_with_progress(headers: Dict, external_subtitl
     if not all_tasks:
         return ext_subs, ext_auds
 
+    workers = get_subtitle_resolve_workers()
+
     async with create_async_client(headers=headers) as client:
-        for track, track_type in all_tasks:
-            lang_raw = (track.get("language") or "unknown").strip()
+        if workers <= 1:
+            results = [await _process_external_track(client, headers, track, track_type, output_dir, bar_manager, stop_check) for track, track_type in all_tasks]
+        else:
+            semaphore = asyncio.Semaphore(workers)
 
-            # Use track's extension as fallback if provided
-            track_ext = track.get("extension", "UNK").lower().lstrip(".")
-            fmt: str = ext_from_url(track.get("url", ""), track_ext)
-            base_lang: str
-            flag_suffix: str
-            base_lang, flag_suffix = normalize_sub_filename(lang_raw, track)
-            logger.debug(f"Prepared to download track: lang_raw={lang_raw}, base_lang={base_lang}, flag_suffix={flag_suffix}, ext={fmt}, url={track.get('url')}")
+            async def _bounded(track: Dict, track_type: str) -> Tuple[str, Optional[Dict]]:
+                async with semaphore:
+                    return await _process_external_track(client, headers, track, track_type, output_dir, bar_manager, stop_check)
 
-            try:
-                raw_url = track["url"]
-                final_url, fmt = await resolve_url(client, raw_url, track_type)
+            results = await asyncio.gather(*(_bounded(track, track_type) for track, track_type in all_tasks))
 
-                # If format is still UNK and track provides extension, use it
-                if fmt == "UNK" and track.get("extension"):
-                    fmt = track.get("extension").lower().lstrip(".")
-                    logger.debug(f"Using track extension for {track_type}: {fmt}")
-
-                if not is_valid_format(fmt, track_type):
-                    logger.error(f"Skipping {track_type} with invalid format '{fmt}' for {lang_raw}: {raw_url}")
-                    continue
-
-                # ── Build normalised filename ─────────────────────────────
-                base_lang, flag_suffix = normalize_sub_filename(lang_raw, track)
-                out_path = output_dir / f"{base_lang}{flag_suffix}.{fmt}"
-                task_key = track.get("_task_key", f"ext_{track_type}_{base_lang}{flag_suffix}")
-                new_label = build_ext_track_label(track, track_type, ext_override=fmt)
-                display_label = build_ext_track_label(track, track_type, ext_override=fmt, plain=True)
-
-                logger.info(f"Downloading external {track_type}: {lang_raw} → {out_path.name}")
-                plan = {
-                    "project": "Velora",
-                    "task_key": task_key,
-                    "label": new_label,
-                    "display_label": display_label,
-                    "concurrency": 1,
-                    "retry_count": config_manager.config.get_int("REQUESTS", "max_retry"),
-                    "timeout_seconds": config_manager.config.get_int("REQUESTS", "timeout"),
-                    "proxy_url": get_proxy_url(),
-                    "verify_tls": config_manager.config.get_bool("REQUESTS", "verify"),
-                    "headers": headers,
-                    "tasks": [
-                        {
-                            "task_key": task_key,
-                            "label": new_label,
-                            "display_label": display_label,
-                            "url": final_url,
-                            "path": str(out_path),
-                            "headers": {},
-                        }
-                    ],
-                }
-
-                results = run_download_plan(plan, event_cb=bar_manager.handle_progress_line, stop_check=stop_check)
-                result = results[0] if results else {}
-                size = int(result.get("bytes") or 0)
-                if result.get("path") and Path(result["path"]).exists() and size > 0:
-                    entry = {
-                        "path": str(out_path),
-                        "language": f"{base_lang}{flag_suffix}",
-                        "type": fmt,
-                        "size": size,
-                    }
-                    if track_type == "subtitle":
-                        ext_subs.append(entry)
-                    else:
-                        ext_auds.append(entry)
-
-                    logger.info(f"Downloaded {track_type} {lang_raw}: {size} bytes → {out_path.name}")
-                else:
-                    logger.error(f"Failed to download {track_type} {lang_raw} (empty file)")
-                    bar_manager.handle_progress_line(
-                        {
-                            "task_key": task_key,
-                            "label": new_label,
-                            "display_label": display_label,
-                            "segments": "0/1",
-                            "speed": "FAILED",
-                        }
-                    )
-
-            except Exception as exc:
-                logger.error(f"External {track_type} download failed ({track.get('language', '?')}): {exc}")
-                bar_manager.handle_progress_line(
-                    {
-                        "task_key": track.get("_task_key", f"ext_{track_type}_{base_lang}{flag_suffix}"),
-                        "label": build_ext_track_label(track, track_type, ext_override=fmt),
-                        "display_label": build_ext_track_label(track, track_type, ext_override=fmt, plain=True),
-                        "segments": "0/1",
-                        "speed": "ERR",
-                    }
-                )
+    for track_type, entry in results:
+        if not entry:
+            continue
+        if track_type == "subtitle":
+            ext_subs.append(entry)
+        else:
+            ext_auds.append(entry)
 
     return ext_subs, ext_auds
