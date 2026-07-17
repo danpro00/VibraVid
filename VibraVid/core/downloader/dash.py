@@ -19,8 +19,9 @@ from VibraVid.core.utils.media_players import MediaPlayers
 
 from VibraVid.core.velora.downloader import MediaDownloader
 from VibraVid.core.drm.manager import DRMManager
-from VibraVid.core.drm.system import DRMType
+from VibraVid.core.drm.system import DRMType, _DRMSystems
 from VibraVid.core.manifest.mpd import DashParser
+from VibraVid.core.manifest.stream import track_label
 
 from .base import BaseDownloader
 
@@ -37,27 +38,7 @@ DELAY_SS = config_manager.config.get_int('DOWNLOAD', 'delay_after_download')
 
 def _stream_drm_label(s) -> str:
     """Build a human-readable track label for DRM reporting."""
-    stype = getattr(s, "type", "") or ""
-
-    if stype == "video":
-        h = getattr(s, "height", 0) or 0
-        if not h:
-            res = getattr(s, "resolution", "") or ""
-            parts = res.lower().replace("p", "").split("x")
-            try:
-                h = int(parts[-1])
-            except (ValueError, IndexError):
-                h = 0
-
-        return f"video {h}p" if h else "video"
-
-    if stype == "audio":
-        lang = (getattr(s, "language", "") or "").strip()
-        if lang and lang.lower() not in ("und", "n/a", ""):
-            return f"audio {lang.upper()}"
-        return "audio"
-
-    return stype or "stream"
+    return track_label(s)
 
 
 def _filter_subtitles(sub_list: list, filter_str: str) -> list:
@@ -166,7 +147,8 @@ class DASH_Downloader(BaseDownloader):
         license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None, license_data: Optional[str] = None,
         output_path: Optional[str] = None, drm_preference = DRMType.WIDEVINE, key: Optional[str] = None, cookies: Optional[Dict[str, str]] = None,
         max_segments: Optional[int] = None, max_time=None, other_tracks: Optional[list] = None,
-        license_request_fn: Optional[Callable[[bytes], bytes]] = None, chapters: Optional[list] = None
+        license_request_fn: Optional[Callable[[bytes], bytes]] = None, chapters: Optional[list] = None,
+        sanitize_path: bool = True
     ):
         """
         Parameters:
@@ -227,7 +209,7 @@ class DASH_Downloader(BaseDownloader):
             config_manager.config.get_bool("DRM", "prefer_remote_cdm"),
         )
 
-        super().__init__(output_path, "_dash_temp")
+        super().__init__(output_path, "_dash_temp", sanitize_path=sanitize_path)
 
         self.decryption_keys = []
         self.media_downloader = None
@@ -286,10 +268,17 @@ class DASH_Downloader(BaseDownloader):
                 if not kids:
                     kids = ["N/A"]
 
-                # A manifest may expose several PSSH variants for one DRM type (e.g. a
-                # standard KID box plus a vendor-specific one); emit each so the key
-                # extractor can try them until a KID is covered.
                 psshs = drm.get_all_pssh_for(dt) or ([drm.get_pssh_for(dt)] if drm.get_pssh_for(dt) else [])
+                if not psshs and dt == DRMType.WIDEVINE:
+                    synth_kids = [k for k in kids if k and k != "N/A"]
+                    for kid_val in synth_kids:
+                        try:
+                            synth = _DRMSystems.build_widevine_pssh_from_kid(kid_val)
+                            if synth not in psshs:
+                                psshs.append(synth)
+                            logger.info(f"DASH: synthesized Widevine PSSH from KID {kid_val}")
+                        except Exception as exc:
+                            logger.debug(f"DASH: Widevine PSSH synthesis failed for {kid_val}: {exc}")
 
                 if not psshs:
                     logger.warning("No PSSH found for this stream's DRM, skipping...")
@@ -512,6 +501,10 @@ class DASH_Downloader(BaseDownloader):
                     console.print(f"[yellow]Error audio {audio_language}: {audio_status['error']}")
                     continue
 
+                # Surface a still-encrypted extra audio through the main downloader.
+                if getattr(audio_dl, "decrypt_failures", None) and self.media_downloader is not None:
+                    self.media_downloader.decrypt_failures.extend(audio_dl.decrypt_failures)
+
                 for af in audio_status.get("audios", []):
                     fpath = af.get("path")
                     if fpath and os.path.exists(fpath):
@@ -731,4 +724,7 @@ class DASH_Downloader(BaseDownloader):
         if DELAY_SS > 0:
             console.print(f"\n[green]Sleeping {DELAY_SS} seconds before finishing...")
             time.sleep(DELAY_SS)
+
+        if self.error:
+            return self.output_path, False, self.error
         return self.output_path, False, None

@@ -1,8 +1,6 @@
 # 17.04.26
 # by @nu00
 
-from urllib.parse import quote_plus
-
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -28,11 +26,7 @@ def title_search(query: str) -> int:
     entries_manager.clear()
     table_show_manager.clear()
 
-    q = quote_plus(query)
-
-    # Search film
-    movies = tmdb_client._make_request("search/movie", {"query": q, "language": "it"}) or {}
-    for m in movies.get('results', [])[:10]:
+    for m in tmdb_client.search_movies(query):
         poster = f"{_TMDB_IMG}{m['poster_path']}" if m.get('poster_path') else None
         year   = (m.get('release_date') or '')[:4] or None
         entries_manager.add(Entries(
@@ -45,9 +39,7 @@ def title_search(query: str) -> int:
             year  = year,
         ))
 
-    # Search tv series
-    shows = tmdb_client._make_request("search/tv", {"query": q, "language": "it"}) or {}
-    for s in shows.get('results', [])[:10]:
+    for s in tmdb_client.search_series(query):
         poster = f"{_TMDB_IMG}{s['poster_path']}" if s.get('poster_path') else None
         year   = (s.get('first_air_date') or '')[:4] or None
         entries_manager.add(Entries(

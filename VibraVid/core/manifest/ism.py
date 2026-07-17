@@ -392,18 +392,6 @@ class ISMParser:
               'fairplay':  [],
             }
         """
-        result: Dict = {"widevine": [], "playready": [], "fairplay": []}
         if self._root is None:
-            return result
-
-        drm = self._extract_drm(self._root)
-
-        pssh_wv = drm.get_pssh_for(DRMType.WIDEVINE)
-        if pssh_wv:
-            result["widevine"].append({"pssh": pssh_wv, "type": "Widevine", "kid": drm.kid})
-
-        pssh_pr = drm.get_pssh_for(DRMType.PLAYREADY)
-        if pssh_pr:
-            result["playready"].append({"pssh": pssh_pr, "type": "PlayReady", "kid": drm.kid})
-
-        return result
+            return {"widevine": [], "playready": [], "fairplay": []}
+        return self._extract_drm(self._root).to_dict()

@@ -31,15 +31,7 @@ class TubiTvAPI(BaseStreamingAPI):
         return self._search_fn
     
     def search(self, query: str) -> List[Entries]:
-        """
-        Search for content on Tubitv.
-        
-        Args:
-            query: Search term
-            
-        Returns:
-            List of Entries objects
-        """
+        """Search for content on Tubitv."""
         search_fn = self._get_search_fn()
         database = search_fn(query, get_onlyDatabase=True)
         
@@ -67,15 +59,7 @@ class TubiTvAPI(BaseStreamingAPI):
         return results
 
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        """
-        Get seasons and episodes for a Tubi TV series.
-        
-        Args:
-            media_item: Entries to get metadata for
-            
-        Returns:
-            List of Season objects, or None if not a series
-        """
+        """Get seasons and episodes for a Tubi TV series."""
         if getattr(media_item, 'type', '') == 'movie' or media_item.is_movie:
             return None
         
@@ -120,17 +104,7 @@ class TubiTvAPI(BaseStreamingAPI):
         return seasons if seasons else None
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        """
-        Start downloading from TubiTV.
-        
-        Args:
-            media_item: Entries to download
-            season: Season number (for series)
-            episodes: Episode selection
-            
-        Returns:
-            True if download started successfully
-        """
+        """Start downloading from TubiTV."""
         search_fn = self._get_search_fn()
         
         # Prepare selections

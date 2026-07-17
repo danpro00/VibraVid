@@ -9,10 +9,10 @@ from typing import List, Dict, Any, Optional
 
 from rich.console import Console
 
-from VibraVid.utils import config_manager
+from VibraVid.utils import config_manager, internet_manager
 from VibraVid.setup import binary_paths, get_ffmpeg_path, get_mkvmerge_path
 from VibraVid.core.ui.tracker import context_tracker
-from VibraVid.core.utils.language import resolve_iso639_2
+from VibraVid.core.utils.language import resolve_iso639_2, resolve_ietf
 
 from .helper.video import detect_ts_timestamp_issues, convert_ts_to_mp4, resolve_compatible_extension, is_mpegts_file, get_stream_codecs
 from .helper.audio import check_duration_v_a, has_audio, get_video_duration, detect_audio_offset
@@ -295,16 +295,38 @@ def _build_global_metadata_flags() -> list:
 
 
 def _mkvmerge_lang_flag(track: Dict[str, Any], default: str = "und") -> str:
+    """mkverge store the language in the IETF format (e.g. es-419) rather than ISO 639-2 (e.g. spa)."""
     raw = track.get("language") or track.get("name") or track.get("lang") or default
-    return resolve_iso639_2(str(raw))
+    return resolve_ietf(str(raw))
 
 
 def _mkvmerge_track_name(track: Dict[str, Any]) -> str:
     return track.get("name") or track.get("language") or track.get("lang") or ""
 
 
+def _mkvmerge_add_track(kind: str, path: str, language: str, track_name: str = "", *, default: bool = False, forced: Optional[bool] = None, hearing_impaired: Optional[bool] = None) -> List[str]:
+    """Build the mkvmerge args that append ONE track (audio/subtitle) from its own input file."""
+    args = ["--language", f"0:{language}"]
+    if track_name:
+        args += ["--track-name", f"0:{track_name}"]
+    if forced is not None:
+        args += ["--forced-track", f"0:{'yes' if forced else 'no'}"]
+    if hearing_impaired is not None:
+        args += ["--hearing-impaired-flag", f"0:{'yes' if hearing_impaired else 'no'}"]
+    args += ["--default-track", f"0:{'yes' if default else 'no'}"]
+    if kind == "audio":
+        args += ["--audio-tracks", "0", "--no-video", "--no-subtitles", path]
+    else:
+        args += ["--subtitle-tracks", "0", "--no-video", "--no-audio", path]
+    return args
+
+
 def _strip_drm_boxes(src_path: str) -> str:
+    """Strips DRM boxes (enca/encv/sinf/pssh) from an ISOBMFF/MP4 file using ffmpeg -c copy."""
     base, ext = os.path.splitext(src_path)
+    if ext.lower() in (".mkv", ".mka", ".webm"):
+        return src_path
+
     out_path = f"{base}_nodrm{ext}"
 
     if os.path.exists(out_path):
@@ -328,8 +350,13 @@ def _strip_drm_boxes(src_path: str) -> str:
 
 
 
+def _sort_chapters(chapters: list) -> list:
+    """Return chapters ordered by their start time."""
+    return sorted(chapters, key=lambda c: c["seconds"])
+
+
 def _write_ffmetadata_chapters(chapters: list) -> str:
-    sorted_chs = sorted(chapters, key=lambda c: c["seconds"])
+    sorted_chs = _sort_chapters(chapters)
     lines = [";FFMETADATA1", ""]
     for i, ch in enumerate(sorted_chs):
         start_ms = ch["seconds"] * 1000
@@ -341,15 +368,20 @@ def _write_ffmetadata_chapters(chapters: list) -> str:
 
 
 def _write_ogm_chapters(chapters: list) -> str:
-    sorted_chs = sorted(chapters, key=lambda c: c["seconds"])
+    sorted_chs = _sort_chapters(chapters)
     lines = []
     for i, ch in enumerate(sorted_chs, 1):
-        h, rem = divmod(ch["seconds"], 3600)
+        h, rem = divmod(int(ch["seconds"]), 3600)
         m, s = divmod(rem, 60)
         lines += [f"CHAPTER{i:02d}={h:02d}:{m:02d}:{s:02d}.000", f"CHAPTER{i:02d}NAME={ch['name']}"]
     with tempfile.NamedTemporaryFile(mode="w", suffix=".ogm", delete=False, encoding="utf-8") as f:
         f.write("\n".join(lines))
         return f.name
+
+
+def _format_timestamp(seconds) -> str:
+    """Format a seconds value as HH:MM:SS for display."""
+    return internet_manager.format_time(seconds, add_hours=True)
 
 
 def inject_chapters(file_path: str, chapters: Optional[list] = None):
@@ -366,11 +398,14 @@ def inject_chapters(file_path: str, chapters: Optional[list] = None):
     if not chapters:
         return file_path, {}
 
-    chapters = sorted(chapters, key=lambda c: c["seconds"])
+    chapters = _sort_chapters(chapters)
     if chapters[0]["seconds"] > 0:
         chapters = [{"name": "Intro", "seconds": 0}] + chapters
 
     logger.info(f"Injecting {len(chapters)} chapter(s) as final mux step")
+    console.print(f"[cyan]\nInject [red]{len(chapters)} [cyan]chapter(s)...")
+    for chapter in chapters:
+        console.print(f"[yellow]    - [red]{_format_timestamp(chapter['seconds'])}[cyan]: [red]{chapter.get('name', '')}")
 
     base, ext = os.path.splitext(file_path)
     tmp_out = f"{base}_chapters{ext}"
@@ -542,14 +577,16 @@ def join_audios(video_path: str, audio_tracks: List[Dict[str, str]], out_path: s
 
     # Check duration differences
     reference_audio: Optional[str] = None
+    reference_duration: Optional[float] = None
 
     for audio_track in audio_tracks:
         audio_path = audio_track.get('path')
         audio_lang = audio_track.get('name', 'unknown')
 
         _, diff, video_duration, audio_duration = check_duration_v_a(video_path, audio_path)
-        diff_str = (f"+{(video_duration - audio_duration):.2f}s" if (video_duration - audio_duration) >= 0 else f"{(video_duration - audio_duration):.2f}s")
-        console.print(f'[yellow]    - [cyan]Audio lang [red]{audio_lang}, [cyan]Video: [red]{video_duration:.2f}s, [cyan]Diff: [red]{diff_str}')
+        diff_sec = round(video_duration - audio_duration)
+        diff_str = (f"+{diff_sec}s" if diff_sec >= 0 else f"{diff_sec}s")
+        console.print(f'[yellow]    - [cyan]Audio lang [red]{audio_lang}, [cyan]Video: [red]{round(video_duration)}s, [cyan]Diff: [red]{diff_str}')
 
         if diff > limit_duration_diff:
             logger.warning(f"Duration difference for '{audio_lang}' exceeds limit ({diff:.2f}s > {limit_duration_diff}s). This track will be included with -shortest, but consider fixing the source files.")
@@ -557,9 +594,16 @@ def join_audios(video_path: str, audio_tracks: List[Dict[str, str]], out_path: s
 
         if reference_audio is None:
             reference_audio = audio_path
+            reference_duration = audio_duration
             audio_track['_offset_sec'] = 0.0
             logger.info(f"Audio offset reference track: {audio_lang}")
         else:
+            dur_gap = abs(audio_duration - reference_duration) if reference_duration is not None else 0.0
+            if dur_gap <= limit_duration_diff:
+                logger.info(f"Skipping offset detection for '{audio_lang}': duration matches reference (gap {dur_gap:.2f}s <= {limit_duration_diff}s).")
+                audio_track['_offset_sec'] = 0.0
+                continue
+
             offset = detect_audio_offset(reference_audio, audio_path)
             if offset is None:
                 logger.warning(f"Offset detection failed for '{audio_lang}'.")
@@ -653,12 +697,7 @@ def _join_audios_mkvmerge(video_path: str, audio_tracks: List[Dict[str, str]], o
         track_name = _mkvmerge_track_name(audio_track)
         clean_audio_path = _strip_drm_boxes(audio_track["path"])
 
-        cmd += ["--language", f"0:{lang_code}"]
-        if track_name:
-            cmd += ["--track-name", f"0:{track_name}"]
-
-        cmd += ["--default-track", f"0:{'yes' if i == 0 else 'no'}"]
-        cmd += ["--audio-tracks", "0", "--no-video", "--no-subtitles", clean_audio_path]
+        cmd += _mkvmerge_add_track("audio", clean_audio_path, lang_code, track_name, default=(i == 0))
 
     logger.info(f"Running Join Audio (mkvmerge) command: {' '.join(cmd)}")
     total_duration = get_video_duration(video_path)
@@ -849,31 +888,20 @@ def _join_subtitles_mkvmerge(video_path: str, subtitles_list: List[Dict[str, str
         sub_path     = subtitle["path"]
         sub_ext      = os.path.splitext(sub_path)[1].lower().lstrip(".")
         lang_display = subtitle.get("lang", subtitle.get("language", "unknown"))
-        lang_iso     = resolve_iso639_2(lang_display)
+        lang_iso     = resolve_ietf(lang_display)   # mkvmerge language-ietf: keep region, strip flags
         lang_lower   = subtitle.get("language", "").lower()
 
         is_forced = "_forced" in lang_lower or bool(subtitle.get("forced"))
         is_hi     = "_sdh" in lang_lower or "_cc" in lang_lower or bool(subtitle.get("sdh")) or bool(subtitle.get("cc"))
         console.print(f"[yellow]    - [cyan]Subtitle lang [red]{lang_display}.{sub_ext}")
 
-        cmd += ["--language",    f"0:{lang_iso}"]
-        cmd += ["--track-name",  f"0:{lang_display}"]
-
-        # forced flag
-        cmd += ["--forced-track", f"0:{'yes' if is_forced else 'no'}"]
-
-        # hearing-impaired flag
-        cmd += ["--hearing-impaired-flag", f"0:{'yes' if is_hi else 'no'}"]
-
         # default track: segui SUBTITLE_DISPOSITION_LANGUAGE, altrimenti mai default
-        if config_lang and not default_assigned and lang_lower == config_lang:
-            cmd += ["--default-track", "0:yes"]
+        is_default = bool(config_lang and not default_assigned and lang_lower == config_lang)
+        if is_default:
             console.print(f"[yellow]    Setting disposition: [red]{lang_display}")
             default_assigned = True
-        else:
-            cmd += ["--default-track", "0:no"]
 
-        cmd += ["--subtitle-tracks", "0", "--no-video", "--no-audio", sub_path]
+        cmd += _mkvmerge_add_track("subtitle", sub_path, lang_iso, lang_display, default=is_default, forced=is_forced, hearing_impaired=is_hi)
 
     logger.info(f"Running Join Subtitle (mkvmerge) command: {' '.join(cmd)}")
     total_duration = get_video_duration(video_path)

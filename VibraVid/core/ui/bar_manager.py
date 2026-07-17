@@ -58,6 +58,11 @@ class DownloadBarManager:
         if self.progress_ctx:
             self.progress_ctx.__exit__(exc_type, exc_val, exc_tb)
 
+    @staticmethod
+    def _wrap_label(label: str) -> str:
+        """Wrap a plain label in [cyan] markup unless it already contains Rich markup."""
+        return label if label.startswith("[") else f"[cyan]{label}"
+
     def add_prebuilt_tasks(self, prebuilt_tasks):
         """Pre-crates tasks to maintain order."""
         if self.progress:
@@ -81,7 +86,7 @@ class DownloadBarManager:
         if self.progress:
             if track_key not in self.tasks:
                 self.tasks[track_key] = self.progress.add_task(
-                    label if label.startswith("[") else f"[cyan]{label}",       # <-- Use provided label or default to track_key, and wrap with [cyan] if it doesn't already contain Rich markup
+                    self._wrap_label(label),
                     total=100, segment="0/1", speed="0Bps", size="0B/0B", compact_metrics=False,
                 )
                 
@@ -100,7 +105,7 @@ class DownloadBarManager:
             compact_metrics = bool(parsed.get("compact_metrics")) or key.startswith("decrypt_")
             self.tasks[key] = (
                 self.progress.add_task(
-                    label if label.startswith("[") else f"[cyan]{label}",   # <-- Use provided label or default to key, and wrap with [cyan] if it doesn't already contain Rich markup
+                    self._wrap_label(label),
                     total=100,
                     segment="0/0",
                     speed="" if compact_metrics else "0Bps",

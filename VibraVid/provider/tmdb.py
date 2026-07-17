@@ -44,16 +44,17 @@ class TMDBClient:
             return self._cache[cache_key]
 
         url = f"{self.base_url}/{endpoint}"
-        
+
         for attempt in range(retries + 1):
             try:
                 with create_client(headers=get_headers()) as client:
+                    logger.debug(f"Make req: {url} with params: {params}")
                     response = client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
                 self._cache[cache_key] = data
                 return data
-            
+
             except Exception as e:
                 if attempt < retries:
                     if hasattr(e, 'response') and e.response:
@@ -63,14 +64,17 @@ class TMDBClient:
                             console.log(f"[yellow]TMDB API error {status_code}, retrying in {wait_time}s... ({attempt+1}/{retries})[/yellow]")
                             time.sleep(wait_time)
                             continue
-                
+
                 console.log(f"[red]Error making request to {endpoint}: {e}[/red]")
                 return {}
-        
+
         return {}
 
     def _slugify(self, text):
         """Normalize and slugify a given text."""
+        if not text:
+            return ""
+            
         text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
         text = re.sub(r'[^\w\s-]', '', text).strip().lower()
         text = re.sub(r'[-\s]+', '-', text)
@@ -78,8 +82,47 @@ class TMDBClient:
 
     def _slugs_match(self, slug1: str, slug2: str, threshold: float = 0.85) -> bool:
         """Check if two slugs are similar enough using fuzzy matching."""
+        if not slug1 or not slug2:
+            return False
+        
         ratio = SequenceMatcher(None, slug1, slug2).ratio()
         return ratio >= threshold
+
+    def _search_tv_with_fallback(self, query: str, language_preference: str, include_adult: bool = True):
+        """Search TV shows, falling back to en-US if no results in the preferred language."""
+        results = self._make_request("search/tv", {
+            "query": query,
+            "language": language_preference,
+            "include_adult": include_adult
+        }).get("results", [])
+
+        if not results and language_preference != "en-US":
+            logger.info(f"No TV results in '{language_preference}' for query '{query}', retrying in en-US")
+            results = self._make_request("search/tv", {
+                "query": query,
+                "language": "en-US",
+                "include_adult": include_adult
+            }).get("results", [])
+
+        return results
+
+    def _search_movie_with_fallback(self, query: str, language_preference: str, include_adult: bool = True):
+        """Search movies, falling back to en-US if no results in the preferred language."""
+        results = self._make_request("search/movie", {
+            "query": query,
+            "language": language_preference,
+            "include_adult": include_adult
+        }).get("results", [])
+
+        if not results and language_preference != "en-US":
+            logger.info(f"No movie results in '{language_preference}' for query '{query}', retrying in en-US")
+            results = self._make_request("search/movie", {
+                "query": query,
+                "language": "en-US",
+                "include_adult": include_adult
+            }).get("results", [])
+
+        return results
 
     def get_type_and_id_by_slug_year(self, slug: str, year: str = None, media_type: str = None, language_preference: str = "it"):
         """Get the type (movie or tv) and ID from TMDB based on slug and year."""
@@ -87,12 +130,14 @@ class TMDBClient:
             year = int(year)
 
         if media_type == "movie":
-            movie_results = self._make_request("search/movie", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
+            movie_results = self._search_movie_with_fallback(slug.replace('-', ' '), language_preference)
             logger.info(f"Found {len(movie_results)} movie results for slug '{slug}' and year '{year}'")
 
             for movie in movie_results:
                 title = movie.get('title')
+                original_title = movie.get('original_title')
                 release_date = movie.get('release_date')
+                logger.debug(f"Candidate movie: title='{title}', original='{original_title}', year={release_date}")
 
                 if release_date:
                     movie_year = int(release_date[:4])
@@ -100,19 +145,22 @@ class TMDBClient:
                     continue
 
                 movie_slug = self._slugify(title)
+                original_slug = self._slugify(original_title) if original_title else None
 
-                if self._slugs_match(movie_slug, slug) and (not year or movie_year == year):
+                if (self._slugs_match(movie_slug, slug) or (original_slug and self._slugs_match(original_slug, slug))) and (not year or movie_year == year):
                     return {'type': "movie", 'id': movie['id']}
 
             logger.info(f"No movie result matched slug '{slug}' and year '{year}'")
 
         elif media_type == "tv":
-            tv_results = self._make_request("search/tv", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
+            tv_results = self._search_tv_with_fallback(slug.replace('-', ' '), language_preference)
             logger.info(f"Found {len(tv_results)} TV results for slug '{slug}' and year '{year}'")
 
             for show in tv_results:
                 name = show.get('name')
+                original_name = show.get('original_name')
                 first_air_date = show.get('first_air_date')
+                logger.debug(f"Candidate TV: name='{name}', original='{original_name}', year={first_air_date}")
 
                 if first_air_date:
                     show_year = int(first_air_date[:4])
@@ -120,56 +168,59 @@ class TMDBClient:
                     continue
 
                 show_slug = self._slugify(name)
+                original_slug = self._slugify(original_name) if original_name else None
 
-                if self._slugs_match(show_slug, slug) and (not year or show_year == year):
+                if (self._slugs_match(show_slug, slug) or (original_slug and self._slugs_match(original_slug, slug))) and (not year or show_year == year):
                     return {'type': "tv", 'id': show['id']}
 
             logger.info(f"No TV result matched slug '{slug}' and year '{year}'")
 
-        else:
-            print("Media type not specified. Searching both movie and tv.")
-            return None
+        return None
 
     def get_year_by_slug_and_type(self, slug: str, media_type: str, language_preference: str = "it"):
         """Returns the year from the first search result that matches the slug."""
         if media_type == "movie":
-            results = self._make_request("search/movie", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
+            results = self._search_movie_with_fallback(slug.replace('-', ' '), language_preference)
             logger.info(f"Found {len(results)} movie results for slug '{slug}'")
 
-            if len(results) == 1:
+            if len(results) == 1 and results[0].get('release_date'):
                 return int(results[0]['release_date'][:4])
-            
+
             for movie in results:
                 title = movie.get('title')
+                original_title = movie.get('original_title')
                 release_date = movie.get('release_date')
-                
+
                 if not release_date:
                     continue
-                
+
                 movie_slug = self._slugify(title)
-                
-                if self._slugs_match(movie_slug, slug):
+                original_slug = self._slugify(original_title) if original_title else None
+
+                if self._slugs_match(movie_slug, slug) or (original_slug and self._slugs_match(original_slug, slug)):
                     return int(release_date[:4])
-                    
+
         elif media_type == "tv":
-            results = self._make_request("search/tv", {"query": slug.replace('-', ' '), "language": language_preference}).get("results", [])
+            results = self._search_tv_with_fallback(slug.replace('-', ' '), language_preference)
             logger.info(f"Found {len(results)} TV results for slug '{slug}'")
 
-            if len(results) == 1:
+            if len(results) == 1 and results[0].get('first_air_date'):
                 return int(results[0]['first_air_date'][:4])
-            
+
             for show in results:
                 name = show.get('name')
+                original_name = show.get('original_name')
                 first_air_date = show.get('first_air_date')
-                
+
                 if not first_air_date:
                     continue
-                
+
                 show_slug = self._slugify(name)
-                
-                if self._slugs_match(show_slug, slug):
+                original_slug = self._slugify(original_name) if original_name else None
+
+                if self._slugs_match(show_slug, slug) or (original_slug and self._slugs_match(original_slug, slug)):
                     return int(first_air_date[:4])
-        
+
         return None
 
     def get_backdrop_url(self, media_type: str, tmdb_id: int, size: str = "w1280"):
@@ -181,7 +232,7 @@ class TMDBClient:
 
             if backdrop_path:
                 return f"https://image.tmdb.org/t/p/{size}{backdrop_path}"
-            
+
         except Exception as e:
             logger.error(f"Error getting backdrop for {media_type} {tmdb_id}: {e}")
 
@@ -225,7 +276,7 @@ class TMDBClient:
 
     def search_movie(self, query: str):
         """Search for a movie and return the TMDB ID of the first result."""
-        results = self._make_request("search/movie", {"query": query, "language": "it"}).get("results", [])
+        results = self._make_request("search/movie", {"query": query, "language": "it", "include_adult": True}).get("results", [])
         logger.info(f"Found {len(results)} movie results for query '{query}'")
 
         if results:
@@ -235,29 +286,29 @@ class TMDBClient:
     def search_movies(self, query: str, language_preference: str = "it"):
         """
         Search for movies and return a list of results with details.
-        Only returns movies that have a valid IMDB ID.
 
         Parameters:
             - query (str): The search query
             - language_preference (str): Language preference (default: "it")
-            
+
         Returns:
             - list: List of dicts containing movie info (id, title, release_date)
         """
-        results = self._make_request("search/movie", {"query": query, "language": language_preference}).get("results", [])
+        results = self._search_movie_with_fallback(query, language_preference)
         logger.info(f"Found {len(results)} movie results for query '{query}'")
 
         movies = []
         for movie in results:
             logger.info(f"Movie ID {movie.get('id')} - '{movie.get('title')}'.")
-            
+
             movies.append({
                 'id': movie.get('id'),
                 'title': movie.get('title'),
+                'original_title': movie.get('original_title'),
                 'release_date': movie.get('release_date'),
                 'poster_path': movie.get('poster_path'),
             })
-        
+
         return movies
 
     def search_series(self, query: str, language_preference: str = "it"):
@@ -271,7 +322,7 @@ class TMDBClient:
         Returns:
             - list: List of dicts containing series info (id, name, first_air_date)
         """
-        results = self._make_request("search/tv", {"query": query, "language": language_preference}).get("results", [])
+        results = self._search_tv_with_fallback(query, language_preference)
         logger.info(f"Found {len(results)} TV results for query '{query}'")
 
         series = []
@@ -281,6 +332,7 @@ class TMDBClient:
             series.append({
                 'id': show.get('id'),
                 'name': show.get('name'),
+                'original_name': show.get('original_name'),
                 'first_air_date': show.get('first_air_date'),
                 'poster_path': show.get('poster_path'),
             })

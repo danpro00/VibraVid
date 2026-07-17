@@ -36,10 +36,10 @@
         <!-- Badges -->
         <div class="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
           <span class="px-2.5 py-1 sm:px-4 sm:py-1.5 bg-red-600 text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded shadow-xl">
-            {% if series.is_album %}Album{% else %}Serie TV{% endif %}
+            {% if series.is_album %}Album{% else %}TV Series{% endif %}
           </span>
           <span class="px-2.5 py-1 sm:px-4 sm:py-1.5 bg-white/20 backdrop-blur-md text-white text-xs sm:text-sm font-semibold rounded">
-            {{ seasons|length }} {% if series.is_album %}Disc{% else %}Stagioni{% endif %}
+            {{ seasons|length }} {% if series.is_album %}Disc{% else %}Seasons{% endif %}
           </span>
           {% if series.year %}
           <span class="px-2.5 py-1 sm:px-4 sm:py-1.5 bg-white/20 backdrop-blur-md text-white text-xs sm:text-sm font-semibold rounded">
@@ -79,13 +79,13 @@
             <input type="hidden" name="download_type" value="full_series">
             <button 
               type="submit" 
-              onclick="return confirm('{% if series.is_album %}Sei sicuro di voler scaricare TUTTO l\'album?{% else %}Sei sicuro di voler scaricare TUTTE le stagioni della serie?{% endif %}')"
+              onclick="return confirm('{% if series.is_album %}Are you sure you want to download the ENTIRE album?{% else %}Are you sure you want to download ALL seasons of the series?{% endif %}')"
               class="w-full px-5 py-3 sm:px-8 sm:py-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-bold text-sm sm:text-base rounded-lg shadow-xl hover:shadow-2xl hover:shadow-red-600/20 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 sm:gap-3">
               <svg class="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
               </svg>
-              <span class="whitespace-nowrap">{% if series.is_album %}SCARICA TUTTO L'ALBUM{% else %}SCARICA L'INTERA SERIE{% endif %}</span>
-              <span class="hidden sm:inline">({{ seasons|length }} {% if series.is_album %}Disc{% else %}Stagioni{% endif %})</span>
+              <span class="whitespace-nowrap">{% if series.is_album %}DOWNLOAD ENTIRE ALBUM{% else %}DOWNLOAD ENTIRE SERIES{% endif %}</span>
+              <span class="hidden sm:inline">({{ seasons|length }} {% if series.is_album %}Disc{% else %}Seasons{% endif %})</span>
             </button>
           </form>
 
@@ -103,7 +103,7 @@
               <svg class="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
               </svg>
-              <span class="whitespace-nowrap" id="selected-seasons-btn-label">{% if series.is_album %}SCARICA I DISC SELEZIONATI{% else %}SCARICA LE STAGIONI SELEZIONATE{% endif %} (0)</span>
+              <span class="whitespace-nowrap" id="selected-seasons-btn-label">{% if series.is_album %}DOWNLOAD SELECTED DISCS{% else %}DOWNLOAD SELECTED SEASONS{% endif %} (0)</span>
             </button>
           </form>
         </div>
@@ -121,7 +121,7 @@
         <div class="flex items-center gap-3 sm:gap-5">
           <!-- Season Checkbox (Hidden, styled through label) -->
           <label class="cursor-pointer group flex-shrink-0 relative">
-            <input type="checkbox" title="Seleziona la stagione {{ season.number }}" class="season-checkbox hidden" value="{{ season.number }}">
+            <input type="checkbox" title="Select season {{ season.number }}" class="season-checkbox hidden" value="{{ season.number }}">
             <div class="season-card w-12 h-12 sm:w-16 sm:h-16 lg:w-20 lg:h-20 bg-gradient-to-br from-red-600 to-pink-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-2xl shadow-red-600/50 transition-all border-2 border-transparent">
               <span class="season-number text-xl sm:text-2xl lg:text-3xl font-black text-white z-[1]">{{ season.number }}</span>
               <div class="season-check-overlay absolute inset-0 bg-red-800 opacity-0 transition-opacity flex items-center justify-center rounded-lg sm:rounded-xl">
@@ -135,10 +135,10 @@
           <!-- Season Info -->
           <div class="flex-1 min-w-0">
             <h2 class="text-lg sm:text-2xl lg:text-3xl font-bold text-white mb-0.5 sm:mb-1 truncate">
-              {% if series.is_album %}{{ season.name }}{% else %}Stagione {{ season.number }}{% if season.name %} - {{ season.name }}{% endif %}{% endif %}
+              {% if series.is_album %}{{ season.name }}{% else %}Season {{ season.number }}{% if season.name %} - {{ season.name }}{% endif %}{% endif %}
             </h2>
             <p class="text-gray-400 text-xs sm:text-sm lg:text-base">
-              {{ season.episode_count }} {% if series.is_album %}tracce{% else %}episodi disponibili{% endif %}
+              {{ season.episode_count }} {% if series.is_album %}tracks{% else %}episodes available{% endif %}
             </p>
           </div>
           
@@ -150,7 +150,7 @@
               <input type="hidden" name="item_payload" value="{{ series.item_payload }}">
               <input type="hidden" name="season_number" value="{{ season.number }}">
               <input type="hidden" name="download_type" value="full_season">
-              <button type="submit" class="p-2 sm:p-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors" title="Scarica stagione completa">
+              <button type="submit" class="p-2 sm:p-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors" title="Download full season">
                 <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                 </svg>
@@ -173,7 +173,7 @@
           <!-- Controls Header -->
           <div class="flex items-center justify-between gap-3 mb-4 sm:mb-6">
             <h3 class="text-sm sm:text-base lg:text-lg font-bold text-white">
-              {% if series.is_album %}Seleziona Tracce{% else %}Seleziona Episodi{% endif %}
+              {% if series.is_album %}Select Tracks{% else %}Select Episodes{% endif %}
             </h3>
             <div class="flex gap-2 sm:gap-3">
               <button 
@@ -181,14 +181,14 @@
                 onclick="window.selectAllEpisodes({{ season.number }})" 
                 class="px-3 py-1.5 sm:px-5 sm:py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors"
               >
-                Tutti
+                All
               </button>
               <button 
                 type="button" 
                 onclick="window.deselectAllEpisodes({{ season.number }})" 
                 class="px-3 py-1.5 sm:px-5 sm:py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors"
               >
-                Nessuno
+                None
               </button>
             </div>
           </div>
@@ -260,7 +260,7 @@
             <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
             </svg>
-            {% if series.is_album %}Scarica Tracce Selezionate{% else %}Scarica Episodi Selezionati{% endif %}
+            {% if series.is_album %}Download Selected Tracks{% else %}Download Selected Episodes{% endif %}
           </button>
         </form>
       </div>
@@ -320,11 +320,11 @@
     const selectedSeasons = Array.from(checkboxes).map(cb => cb.value);
     
     if (selectedSeasons.length === 0) {
-      alert('Seleziona almeno una stagione da scaricare.');
+      alert('Select at least one season to download.');
       return;
     }
-    
-    if (confirm(`Sei sicuro di voler scaricare le stagioni selezionate: ${selectedSeasons.join(', ')}?`)) {
+
+    if (confirm(`Are you sure you want to download the selected seasons: ${selectedSeasons.join(', ')}?`)) {
       document.getElementById('selected-seasons-input').value = selectedSeasons.join(',');
       document.getElementById('download-selected-seasons-form').submit();
     }
@@ -462,7 +462,7 @@ function initFormValidation() {
       if (selectedEpisodesInput && !selectedEpisodesInput.value.trim()) {
         console.error(`[FORM SUBMIT] ERROR: No episodes selected!`);
         e.preventDefault();
-        alert('Seleziona almeno un episodio prima di scaricare.');
+        alert('Select at least one episode before downloading.');
       } else {
         console.log(`[FORM SUBMIT] OK Form validation passed, submitting...`);
       }

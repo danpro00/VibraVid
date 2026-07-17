@@ -198,24 +198,24 @@ def _version_tuple(version):
     return tuple(int(p) for p in parts) if parts else None
 
 
-def check_velora_update():
+def check_velora_update() -> dict:
     """Re-download the Velora binary when it is outdated."""
     latest_version = _fetch_latest_velora_version()
     if not latest_version:
-        return
+        return {"success": False, "message": "Could not fetch the latest Velora version."}
 
     from VibraVid.setup import get_velora_path
     from VibraVid.setup import system as setup_system
 
     velora_path = get_velora_path()
     if not velora_path:
-        return
+        return {"success": False, "message": "Velora binary not found."}
 
     # Only manage the binary we downloaded ourselves; never touch a system-PATH install.
     managed_dir = os.path.abspath(binary_paths.get_binary_directory())
     if os.path.dirname(os.path.abspath(velora_path)) != managed_dir:
         logger.info("Velora resolved outside the managed binary directory; skipping auto-update")
-        return
+        return {"success": False, "message": "Velora is a system-installed binary; skipping auto-update."}
 
     local_version = _get_local_velora_version(velora_path)
     local_tuple = _version_tuple(local_version)
@@ -224,7 +224,7 @@ def check_velora_update():
     needs_update = local_tuple is None or (latest_tuple is not None and local_tuple < latest_tuple)
     if not needs_update:
         logger.debug(f"Velora is up to date (local: {local_version}, latest: {latest_version})")
-        return
+        return {"success": True, "updated": False, "local": local_version, "latest": latest_version, "message": f"Velora is up to date ({local_version})."}
 
     console.print(f"[#FFD60A]Velora outdated (local: {local_version or 'unknown'} -> latest: {latest_version}), updating...")
 
@@ -232,7 +232,7 @@ def check_velora_update():
         os.remove(velora_path)
     except OSError as e:
         logger.warning(f"Failed to remove stale Velora binary: {e}")
-        return
+        return {"success": False, "message": f"Failed to remove stale Velora binary: {e}"}
 
     # Drop cached resolutions so the next lookup re-downloads the binary.
     binary_paths.invalidate_binary(os.path.basename(velora_path))
@@ -241,6 +241,9 @@ def check_velora_update():
     new_path = get_velora_path()
     if not new_path:
         console.print("[#E63946]Velora re-download failed")
+        return {"success": False, "message": "Velora re-download failed."}
+
+    return {"success": True, "updated": True, "local": local_version, "latest": latest_version, "message": f"Velora updated: {local_version or 'unknown'} -> {latest_version}."}
 
 
 def update():

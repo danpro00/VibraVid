@@ -38,7 +38,7 @@ class HLS_Downloader(BaseDownloader):
         license_url: Optional[str] = None, license_headers: Optional[Dict[str, str]] = None, license_certificate: Optional[str] = None,
         output_path: Optional[str] = None, drm_preference = DRMType.WIDEVINE, key: Optional[str] = None,
         cookies: Optional[Dict[str, str]] = None, max_segments: Optional[int] = None, max_time=None,
-        other_tracks: Optional[list] = None, chapters: Optional[list] = None
+        other_tracks: Optional[list] = None, chapters: Optional[list] = None, sanitize_path: bool = True
     ):
         """
         Parameters:
@@ -82,7 +82,7 @@ class HLS_Downloader(BaseDownloader):
             config_manager.config.get_bool("DRM", "prefer_remote_cdm"),
         )
 
-        super().__init__(output_path, "_hls_temp")
+        super().__init__(output_path, "_hls_temp", sanitize_path=sanitize_path)
 
     def _collect_drm_from_streams(self, streams: list) -> Dict[str, List[Dict]]:
         """

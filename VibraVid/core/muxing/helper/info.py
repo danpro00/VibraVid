@@ -8,6 +8,18 @@ from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
+_PATTERNS = {
+    "stream":    re.compile(r"  Stream #.*"),
+    "id":        re.compile(r"#0:\d(\[0x\w+?\])"),
+    "type":      re.compile(r": (\w+): (.*)"),
+    "base_info": re.compile(r"(.*?)(,|$)"),
+    "replace":   re.compile(r" \/ 0x\w+"),
+    "res":       re.compile(r"\d{2,}x\d+"),
+    "bitrate":   re.compile(r"\d+ kb\/s"),
+    "fps":       re.compile(r"(\d+(?:\.\d+)?) fps"),
+    "dovi":      re.compile(r"DOVI configuration record.*?profile: (\d).*?compatibility id: (\d)"),
+    "start":     re.compile(r"Duration.*?start: (\d+\.?\d{0,3})"),
+}
 
 
 @dataclass
@@ -25,18 +37,7 @@ class Mediainfo:
 
     @staticmethod
     def _patterns():
-        return {
-            "stream":    re.compile(r"  Stream #.*"),
-            "id":        re.compile(r"#0:\d(\[0x\w+?\])"),
-            "type":      re.compile(r": (\w+): (.*)"),
-            "base_info": re.compile(r"(.*?)(,|$)"),
-            "replace":   re.compile(r" \/ 0x\w+"),
-            "res":       re.compile(r"\d{2,}x\d+"),
-            "bitrate":   re.compile(r"\d+ kb\/s"),
-            "fps":       re.compile(r"(\d+(?:\.\d+)?) fps"),
-            "dovi":      re.compile(r"DOVI configuration record.*?profile: (\d).*?compatibility id: (\d)"),
-            "start":     re.compile(r"Duration.*?start: (\d+\.?\d{0,3})"),
-        }
+        return _PATTERNS
 
     @classmethod
     async def from_file_async(cls, binary: str, file: str) -> list["Mediainfo"]:

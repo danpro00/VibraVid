@@ -8,6 +8,30 @@ from typing import Dict, List, Optional
 from VibraVid.core.drm.system import _DRMSystems, DRMType
 
 
+def track_label(s) -> str:
+    """Build a short human-readable label for a stream/track (DRM reporting, decrypt-failure logs)."""
+    stype = getattr(s, "type", "") or ""
+
+    if stype == "video":
+        h = getattr(s, "height", 0) or 0
+        if not h:
+            res = getattr(s, "resolution", "") or ""
+            parts = res.lower().replace("p", "").split("x")
+            try:
+                h = int(parts[-1])
+            except (ValueError, IndexError):
+                h = 0
+        return f"video {h}p" if h else "video"
+
+    if stype == "audio":
+        lang = (getattr(s, "language", "") or "").strip()
+        if lang and lang.lower() not in ("und", "n/a", ""):
+            return f"audio {lang.upper()}"
+        return "audio"
+
+    return stype or "stream"
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +162,23 @@ class DRMInfo:
     def get_all_drm_types(self) -> List[str]:
         return list(self._drm_types)
 
+    def to_dict(self) -> Dict:
+        """Canonical DRM dict consumed by the HLS/ISM downloader fallbacks::
+
+            {'widevine': [{'pssh','type','kid'}], 'playready': [...], 'fairplay': [{'uri','type','kid'}]}
+        """
+        result: Dict = {"widevine": [], "playready": [], "fairplay": []}
+        pssh_wv = self.get_pssh_for(DRMType.WIDEVINE)
+        if pssh_wv:
+            result["widevine"].append({"pssh": pssh_wv, "type": "Widevine", "kid": self.kid})
+        pssh_pr = self.get_pssh_for(DRMType.PLAYREADY)
+        if pssh_pr:
+            result["playready"].append({"pssh": pssh_pr, "type": "PlayReady", "kid": self.kid})
+        pssh_fp = self.get_pssh_for(DRMType.FAIRPLAY)
+        if pssh_fp:
+            result["fairplay"].append({"uri": pssh_fp, "type": "FairPlay", "kid": self.kid})
+        return result
+
     def add_advertised_type(self, drm_type: str) -> None:
         """Register a DRM system merely *advertised* by the manifest (e.g. HLS ``ALLOWED-CPC``) without an associated PSSH/KID."""
         if drm_type and drm_type not in self._drm_types:
@@ -179,19 +220,13 @@ class DRMInfo:
         else:
             self.method = (scheme_id_uri.split(":")[-1] if ":" in scheme_id_uri else scheme_id_uri)
         
-        detected = None
-        if self.WIDEVINE_SYSTEM_ID in s or "widevine" in s:
-            detected = DRMType.WIDEVINE
-        elif self.PLAYREADY_SYSTEM_ID in s or "playready" in s or "com.microsoft" in s:
-            detected = DRMType.PLAYREADY
-        elif self.FAIRPLAY_SYSTEM_ID in s or "fairplay" in s or "com.apple" in s:
-            detected = DRMType.FAIRPLAY
-        
-        if detected and detected not in self._drm_types:
-            self._drm_types.append(detected)
-        
-        if not self.drm_type and detected:
-            self.drm_type = detected
+        detected = DRMType.from_scheme(scheme_id_uri)
+        if detected and detected != DRMType.UNKNOWN:
+            if detected not in self._drm_types:
+                self._drm_types.append(detected)
+
+            if not self.drm_type:
+                self.drm_type = detected
 
     def is_encrypted(self) -> bool:
         return bool(self.pssh or self.kid or self.default_kid or self.default_kids or self._pssh_by_type)
@@ -295,10 +330,12 @@ class Stream:
 
     drm: DRMInfo = field(default_factory=DRMInfo)
 
-    encryption_method: Optional[str] = None
     key_uri: Optional[str] = None
     key_data: Optional[bytes] = None
     iv: Optional[str] = None
+
+    # Smooth Streaming / ISM: raw CodecPrivateData (set by manifest/ism.py, consumed by velora/_ism_postproc.py)
+    codec_private_data: Optional[bytes] = None
 
     playlist_url: Optional[str] = None
     segments: List[Segment] = field(default_factory=list)
@@ -421,6 +458,17 @@ class Stream:
     def get_hdr_display(self) -> str:
         vr = (self.video_range or "").upper()
         return vr if vr and vr != "SDR" else ""
+
+    @property
+    def encryption_method(self) -> Optional[str]:
+        """Encryption mode (cenc/cbcs/SAMPLE-AES…), derived from the attached DRMInfo."""
+        return self.drm.method if self.drm else None
+
+    @encryption_method.setter
+    def encryption_method(self, value: Optional[str]) -> None:
+        # Backward-compatible no-op: the value is owned by DRMInfo.method.
+        if value and self.drm and not self.drm.method:
+            self.drm.method = value
 
     def get_flags_display(self) -> str:
         flags = []

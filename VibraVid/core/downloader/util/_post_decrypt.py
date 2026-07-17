@@ -2,15 +2,13 @@
 
 import os
 import logging
-from typing import Any, Optional
-
-from rich.console import Console
+from typing import Any, Callable, Dict, Optional
 
 from VibraVid.core.decryptor import Decryptor, KeysManager
 from VibraVid.core.ui.tracker import download_tracker
+from VibraVid.core.ui.bar_manager import console
 
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
@@ -29,7 +27,7 @@ class PostDownloadDecryptor:
             return bool(key)
         return False
 
-    def run(self, path: str, key: Any, download_id: Optional[str] = None) -> None:
+    def run(self, path: str, key: Any, download_id: Optional[str] = None, progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
         """Decrypt *path* in-place.  Logs and prints errors but never raises."""
         logger.info(f"PostDownloadDecryptor: probing {os.path.basename(path)} ...")
         if download_id:
@@ -38,7 +36,7 @@ class PostDownloadDecryptor:
         dec_path = path + ".dec"
         try:
             decryptor = Decryptor()
-            mode, kid, *_rest = decryptor.detect_encryption(path)
+            mode, kid, pssh, *_rest = decryptor.detect_encryption(path)
 
             if mode is None:
                 logger.info("PostDownloadDecryptor: file is not encrypted — skipping.")
@@ -48,6 +46,11 @@ class PostDownloadDecryptor:
             logger.info(f"PostDownloadDecryptor: encryption found (mode={mode}, kid={kid}) — starting decryption.")
 
             if kid:
+                if not KeysManager.is_zero_kid(kid):
+                    from VibraVid.core.drm.manager import DRMManager
+                    resolved = DRMManager().resolve_flat_key(kid, pssh, key, drm_type=mode or "mp4")
+                    if resolved:
+                        key = resolved[0]
                 self._warn_if_kid_missing(kid, key)
 
             ok = decryptor.decrypt(
@@ -55,7 +58,7 @@ class PostDownloadDecryptor:
                 keys=key,
                 output_path=dec_path,
                 stream_type="video",
-                progress_cb=None,
+                progress_cb=progress_cb,
             )
 
             if ok and os.path.exists(dec_path) and os.path.getsize(dec_path) > 0:
@@ -93,26 +96,33 @@ class PostDownloadDecryptor:
         found    = False
 
         if isinstance(key, KeysManager):
-            found = any(
-                k.kid.replace("-", "").lower() == kid_norm
-                for k in (key.get_keys_list() or [])
-                if hasattr(k, "kid")
-            )
+            pairs = key.get_keys_list() or []
+            found = len(pairs) == 1 and pairs[0].split(":")[0] == "1"
+            if not found:
+                found = any(
+                    k.kid.replace("-", "").lower() == kid_norm
+                    for k in pairs
+                    if hasattr(k, "kid")
+                )
 
         elif isinstance(key, str):
             # Accepts "kid:key" or "kid:key|kid:key|..." formats
-            found = any(
-                pair.split(":")[0].replace("-", "").lower() == kid_norm
-                for pair in key.strip().split("|")
-                if ":" in pair
-            )
+            pairs = [pair for pair in key.strip().split("|") if ":" in pair]
+            found = len(pairs) == 1 and pairs[0].split(":")[0] == "1"
+            if not found:
+                found = any(
+                    pair.split(":")[0].replace("-", "").lower() == kid_norm
+                    for pair in pairs
+                )
 
         elif isinstance(key, (list, tuple)):
-            for pair in key:
-                raw = pair if isinstance(pair, str) else str(pair)
-                if raw.split(":")[0].replace("-", "").lower() == kid_norm:
-                    found = True
-                    break
+            raws = [pair if isinstance(pair, str) else str(pair) for pair in key]
+            found = len(raws) == 1 and raws[0].split(":")[0] == "1"
+            if not found:
+                found = any(
+                    raw.split(":")[0].replace("-", "").lower() == kid_norm
+                    for raw in raws
+                )
 
         if not found:
             logger.warning(f"PostDownloadDecryptor: KID [{kid}] from probe not found among provided keys — decryption may fail.")

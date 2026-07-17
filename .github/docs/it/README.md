@@ -270,6 +270,8 @@ Tutte le impostazioni si trovano in `config.json`. Le sezioni seguenti descrivon
 | `%(language)` | Lingue audio |
 | `%(video_codec)` | Codec video |
 | `%(audio_codec)` | Codec audio |
+| `%(audio_flags)` | Flag traccia audio, es. `DEFAULT` |
+| `%(sub_flags)` | Flag traccia sottotitoli, es. `CC-SDH-FORCED` |
 | `%(original_title)` | Titolo in lingua originale (richiede API key TMDB) |
 | `%(original_language)` | Codice lingua originale, es. `ja` (richiede API key TMDB) |
 | `%(tmdb_id)` | ID TMDB (richiede API key TMDB) |
@@ -301,6 +303,8 @@ S%(season:02d)/     ->  cartella stagione  S01/
 | `%(language)` | Lingue audio |
 | `%(video_codec)` | Codec video |
 | `%(audio_codec)` | Codec audio |
+| `%(audio_flags)` | Flag traccia audio, es. `DEFAULT` |
+| `%(sub_flags)` | Flag traccia sottotitoli, es. `CC-SDH-FORCED` |
 | `%(original_title)` | Titolo in lingua originale (richiede API key TMDB) |
 | `%(original_language)` | Codice lingua originale, es. `ja` (richiede API key TMDB) |
 | `%(tmdb_id)` | ID TMDB (richiede API key TMDB) |
@@ -365,6 +369,9 @@ S%(season:02d)/     ->  cartella stagione  S01/
 | `"1080,H265"` | Altezza + vincolo codec |
 | `"1080\|best"` | Altezza con fallback al migliore |
 | `"1080\|best,H265"` | Altezza + codec con fallback al migliore |
+| `"bitrate=8000:for=best"` | Tetto di bitrate (kbps) — migliore entro il limite. Utile quando la resa a bitrate più alto non è decriptabile con il proprio dispositivo/livello di sicurezza DRM |
+| `"bitrate=1000-8000:for=best"` | Range di bitrate (kbps) — migliore entro il range |
+| `"bitrate=1000-:for=best"` | Solo soglia minima (nessun limite superiore) — migliore entro il range |
 | `"false"` | Salta video |
 
 **Audio (`select_audio`):**
@@ -381,6 +388,7 @@ S%(season:02d)/     ->  cartella stagione  S01/
 | `"ita,MP4A"` | Lingua + codec | DROP se combinazione non trovata |
 | `"ita\|best"` | Lingua con fallback al migliore | Fallback al migliore |
 | `"ita\|best,AAC"` | Lingua + codec con fallback | Fallback al migliore |
+| `"bitrate=64-192:for=best"` | Range di bitrate (kbps) — migliore entro il range | Ignora il range se nessun match |
 | `"false"` | Salta audio | — |
 
 **Sottotitoli (`select_subtitle`):**
@@ -462,7 +470,9 @@ La traccia DV viene muxata come traccia video aggiuntiva tramite mkvmerge.
     "proxy": {
       "http": "http://localhost:8888",
       "https": "http://localhost:8888"
-    }
+    },
+    "flaresolverr_url": "http://localhost:8191",
+    "bypasser_url": "http://localhost:8192"
   }
 }
 ```
@@ -475,6 +485,8 @@ La traccia DV viene muxata come traccia video aggiuntiva tramite mkvmerge.
 | `proxy_scope` | `scrap+down` | Dove applicare il proxy: `scrap`, `down` o `scrap+down` (vedi sotto) |
 | `proxy.http` | — | URL del proxy per destinazioni HTTP |
 | `proxy.https` | — | URL del proxy per destinazioni HTTPS |
+| `flaresolverr_url` | `http://localhost:8191` | Endpoint FlareSolverr usato dal servizio musicale **lucida** per risolvere il challenge Cloudflare di lucida.to. In locale lascia il default localhost (sidecar sullo stesso host); in Docker la env `FLARESOLVERR_URL` in `docker-compose.yml` lo sovrascrive con il servizio `flaresolverr`. |
+| `bypasser_url` | `http://localhost:8192` | Endpoint del sidecar **bypasser** che risolve il widget Cloudflare Turnstile di monochrome.tf per il download Amazon Music di **monochrome**. **Obbligatorio** — non esiste un fallback in-process. In locale lascia il default localhost; in Docker la env `BYPASSER_URL` in `docker-compose.yml` lo sovrascrive con il servizio `bypasser`. |
 
 > **Ambito del proxy (proxy scope)** — quando `use_proxy` è `true`, `proxy_scope` decide *quale* traffico passa dal proxy:
 > | Valore | Effetto |

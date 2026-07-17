@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from typing import Any, Callable, Dict, Optional
 
 from VibraVid.setup import get_bento4_decrypt_path, get_ffmpeg_path, get_shaka_packager_path
@@ -15,6 +16,21 @@ from .keys_manager import KeysManager
 
 
 logger = logging.getLogger(__name__)
+_TRANSIENT_OPEN_ERROR_MARKERS = (
+    "cannot open input file",           # mp4decrypt (Bento4)
+    "cannot open file for reading",     # shaka-packager
+)
+_OPEN_RETRY_ATTEMPTS = 6
+_OPEN_RETRY_BASE_DELAY = 0.4
+_OPEN_RETRY_MAX_DELAY = 3.0
+
+
+def _is_transient_open_error(stderr_text: Optional[str]) -> bool:
+    text = (stderr_text or "").lower()
+    return any(marker in text for marker in _TRANSIENT_OPEN_ERROR_MARKERS)
+
+def _open_retry_delay(attempt: int) -> float:
+    return min(_OPEN_RETRY_BASE_DELAY * (2 ** attempt), _OPEN_RETRY_MAX_DELAY)
 
 
 class Decryptor:
@@ -71,12 +87,22 @@ class Decryptor:
         cmd.extend([encrypted_path, output_path])
 
         logger.info(f"Bento4 cmd: {self._redacted_cmd(cmd)}")
-        result = run_with_progress(cmd, label, encrypted_path, output_path, progress_cb=progress_cb, status=status)
-        if result is True:
-            if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
-                logger.error("Bento4 reported success but output is missing/empty")
-                return False
-            return True
+
+        result = None
+        for attempt in range(_OPEN_RETRY_ATTEMPTS):
+            result = run_with_progress(cmd, label, encrypted_path, output_path, progress_cb=progress_cb, status=status)
+            if result is True:
+                if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+                    logger.error("Bento4 reported success but output is missing/empty")
+                    return False
+                return True
+
+            stderr_text = result[1] if isinstance(result, tuple) else str(result)
+            if attempt < _OPEN_RETRY_ATTEMPTS - 1 and _is_transient_open_error(stderr_text):
+                logger.warning(f"Bento4 could not open input (attempt {attempt + 1}/{_OPEN_RETRY_ATTEMPTS}), retrying: {stderr_text}")
+                time.sleep(_open_retry_delay(attempt))
+                continue
+            break
 
         logger.error(f"Bento4 failed: {result}")
         console.print(f"[red]Bento4 failed: {result}")
@@ -139,23 +165,33 @@ class Decryptor:
         ]
 
         logger.info(f"Shaka cmd: {self._redacted_cmd(cmd)}")
-        result = run_with_progress(cmd, label, encrypted_path, shaka_output, progress_cb=progress_cb, status=status)
-        if result is True:
-            if shaka_output != output_path and os.path.exists(shaka_output):
-                try:
-                    os.replace(shaka_output, output_path)
-                except OSError:
-                    try:
-                        shutil.copy2(shaka_output, output_path)
-                        os.remove(shaka_output)
-                    except Exception as exc:
-                        logger.error(f"Shaka output move failed: {exc}")
-                        return False
 
-            if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
-                logger.error("Shaka reported success but output is missing/empty")
-                return False
-            return True
+        result = None
+        for attempt in range(_OPEN_RETRY_ATTEMPTS):
+            result = run_with_progress(cmd, label, encrypted_path, shaka_output, progress_cb=progress_cb, status=status)
+            if result is True:
+                if shaka_output != output_path and os.path.exists(shaka_output):
+                    try:
+                        os.replace(shaka_output, output_path)
+                    except OSError:
+                        try:
+                            shutil.copy2(shaka_output, output_path)
+                            os.remove(shaka_output)
+                        except Exception as exc:
+                            logger.error(f"Shaka output move failed: {exc}")
+                            return False
+
+                if not os.path.exists(output_path) or os.path.getsize(output_path) <= 0:
+                    logger.error("Shaka reported success but output is missing/empty")
+                    return False
+                return True
+
+            stderr_text = result[1] if isinstance(result, tuple) else str(result)
+            if attempt < _OPEN_RETRY_ATTEMPTS - 1 and _is_transient_open_error(stderr_text):
+                logger.warning(f"Shaka could not open input (attempt {attempt + 1}/{_OPEN_RETRY_ATTEMPTS}), retrying: {stderr_text}")
+                time.sleep(_open_retry_delay(attempt))
+                continue
+            break
 
         stderr_msg = result[1] if isinstance(result, tuple) else "Unknown error"
         logger.error(f"Shaka failed: {stderr_msg}")
@@ -178,6 +214,14 @@ class Decryptor:
             if not norm_keys:
                 logger.error("No valid keys available for decryption")
                 return False
+
+            norm_keys = KeysManager.resolve_placeholder_kid(kid, norm_keys)
+
+            if kid and not KeysManager.is_zero_kid(kid):
+                available_kids = {k.lower() for k, _ in norm_keys}
+                if kid.lower() not in available_kids:
+                    logger.error(f"No key matches required KID {kid} (have: {', '.join(k[:8] for k in available_kids)}); refusing to decrypt with mismatched keys")
+                    return False
 
             method_display = (enc_method or mode or "unknown").upper().replace("_", "-")
             filename = os.path.basename(encrypted_path)

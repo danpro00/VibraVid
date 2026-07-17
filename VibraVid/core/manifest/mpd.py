@@ -16,7 +16,7 @@ from VibraVid.utils import config_manager
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.core.manifest.stream import DRMInfo, Segment, Stream, DRMType
 from VibraVid.core.utils.language import resolve_locale
-from VibraVid.core.utils.codec import DV_CODEC_PREFIXES, detect_stream_type, get_codec_extension, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS
+from VibraVid.core.utils.codec import infer_video_range, detect_stream_type, get_codec_extension, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS
 from VibraVid.core.manifest._utils import calc_base_url, save_raw_manifest, is_simple_relative_ref, fast_urljoin, fast_urljoin_auto
 
 
@@ -25,11 +25,6 @@ logger = logging.getLogger(__name__)
 _NS = {
     "mpd": "urn:mpeg:dash:schema:mpd:2011",
     "cenc": "urn:mpeg:cenc:2013",
-}
-_SCHEME_DRM_MAP = {
-    DRMInfo.WIDEVINE_SYSTEM_ID: DRMType.WIDEVINE, "edef8ba9": DRMType.WIDEVINE, "widevine": DRMType.WIDEVINE,
-    DRMInfo.PLAYREADY_SYSTEM_ID: DRMType.PLAYREADY, "9a04f079": DRMType.PLAYREADY, "playready": DRMType.PLAYREADY, "com.microsoft": DRMType.PLAYREADY,
-    DRMInfo.FAIRPLAY_SYSTEM_ID:  DRMType.FAIRPLAY, "94ce86fb": DRMType.FAIRPLAY, "fairplay": DRMType.FAIRPLAY, "com.apple": DRMType.FAIRPLAY,
 }
 _TC_MAP = {
     "1": "SDR", "6": "SDR", "7": "SDR", "13": "SDR", "14": "SDR", "15": "SDR",
@@ -86,25 +81,14 @@ def _stream_dedup_key(s: Stream):
 
 
 def _drm_hint_from_scheme(scheme_lower: str) -> Optional[str]:
-    for fragment, dtype in _SCHEME_DRM_MAP.items():
-        if fragment in scheme_lower:
-            return dtype
-    return None
+    """Classify a DASH schemeIdUri into a DRMType short code (delegates to the shared helper)."""
+    result = DRMType.from_scheme(scheme_lower)
+    return result if result != DRMType.UNKNOWN else None
 
 
 def _video_range_from_codecs(codecs: str) -> str:
     """Infer HDR type from codec string prefix."""
-    c = (codecs or "").lower()
-    for prefix in DV_CODEC_PREFIXES:
-        if c.startswith(prefix) or f",{prefix}" in c:
-            return "DV"
-    if re.search(r"hvc1\.2\.|hev1\.2\.", c):
-        return "HDR10"
-    if re.search(r"hvc1\.8\.|hev1\.8\.", c):
-        return "HDR10"
-    if re.search(r"av01\.[12]\.", c):
-        return "HDR10"
-    return ""
+    return infer_video_range(codecs)
 
 
 def _is_ad_period(period_url: str, period_element) -> bool:
@@ -407,8 +391,9 @@ class DashParser:
         elif stype == "subtitle":
             self._parse_subtitle_fields(rep, adapt, s)
 
-        # DRM: rep overrides adapt; merge when both present
-        rep_drm = self._extract_drm(rep)
+        # DRM: rep overrides adapt; merge when both present.
+        rep_has_cp = rep.find(".//mpd:ContentProtection", _NS) is not None
+        rep_drm = self._extract_drm(rep) if rep_has_cp else DRMInfo()
         if rep_drm.is_encrypted() and adapt_drm.is_encrypted():
             for dtype, pssh in adapt_drm._pssh_by_type.items():
                 if dtype not in rep_drm._pssh_by_type:
@@ -485,8 +470,8 @@ class DashParser:
         return s
 
     def _parse_video_fields(self, rep, adapt, s):
-        s.width = int(rep.get("width", 0))
-        s.height = int(rep.get("height", 0))
+        s.width = int(rep.get("width") or adapt.get("width") or 0)
+        s.height = int(rep.get("height") or adapt.get("height") or 0)
         s.resolution = f"{s.width}x{s.height}" if s.width and s.height else ""
         s.fps = rep.get("frameRate", adapt.get("frameRate", ""))
         s.codecs = rep.get("codecs") or adapt.get("codecs", "")

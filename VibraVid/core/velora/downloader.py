@@ -1,6 +1,5 @@
 # 09.04.26
 
-import re
 import asyncio
 import logging
 import threading
@@ -24,7 +23,7 @@ from ._stream_vod import VodStreamMixin
 from ._multiperiod import MultiPeriodMixin
 from ._decrypt_pipeline import DecryptPipelineMixin
 from ._ism_postproc import IsmPostprocMixin
-from .util._stream_helpers import detect_seg_ext, join_interruptible, print_failed_segments_report, SilentDownloadBarManager
+from .util._stream_helpers import detect_seg_ext, join_interruptible, print_failed_segments_report, SilentDownloadBarManager, safe_name
 
 
 logger = logging.getLogger("manual")
@@ -67,6 +66,10 @@ class MediaDownloader(LiveDownloadMixin, VodStreamMixin, MultiPeriodMixin, Decry
         # Failed-segment accumulator
         self._failed_segments: list = []
         self._failed_segments_lock = threading.Lock()
+
+        # Decryption-failure accumulator: per-track records for streams that are still encrypted after decrypt
+        self.decrypt_failures: list = []
+        self._decrypt_failures_lock = threading.Lock()
 
     def start_download(self, show_progress: bool = True) -> Dict[str, Any]:
         if self.download_id:
@@ -362,8 +365,16 @@ class MediaDownloader(LiveDownloadMixin, VodStreamMixin, MultiPeriodMixin, Decry
         if stream.type == "video":
             return f"{self.filename}.{ext}"
 
-        lang = re.sub(r"[^\w\-]", "_", (stream.language or "und").lower())
+        raw_lang = (getattr(stream, "resolved_language", "") or stream.language or "und")
+        lang = safe_name(raw_lang.lower())
         if stream.type == "subtitle":
+            if getattr(stream, "forced", False):
+                lang = f"{lang}_forced"
+            elif getattr(stream, "is_sdh", False):
+                lang = f"{lang}_sdh"
+            elif getattr(stream, "is_cc", False):
+                lang = f"{lang}_cc"
+
             if getattr(stream, "is_wvtt_mp4", False):
                 base = f"{self.filename}.{lang}.wvtt"
             else:

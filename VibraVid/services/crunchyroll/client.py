@@ -1,13 +1,12 @@
 # 29.12.25
 
 import time
-import os
 import logging
 import json
 import base64
 from typing import Tuple, List, Dict, Optional
 
-from VibraVid.utils import config_manager
+from VibraVid.utils import config_manager, disk_cache
 from VibraVid.utils.http_client import create_client, get_userAgent
 
 
@@ -56,9 +55,8 @@ class CrunchyrollClient:
 
     @staticmethod
     def _resolve_token_cache_path() -> str:
-        """Resolve absolute path for token cache file - always enabled."""
-        path = os.path.join(config_manager.base_path, ".cache", "crunchyroll_token.json")
-        return path
+        """Absolute path for the token cache file (informational — I/O goes through disk_cache)."""
+        return disk_cache.cache_path("crunchyroll", "token")
 
     @staticmethod
     def _jwt_exp(token: Optional[str]) -> Optional[int]:
@@ -97,19 +95,11 @@ class CrunchyrollClient:
 
     def _load_token_cache(self) -> Dict:
         """Load cached authentication tokens from file if available."""
-        if not self.token_cache_path:
+        data = disk_cache.load("crunchyroll", "token")
+        if not data:
             return {}
-        
-        try:
-            if not os.path.exists(self.token_cache_path):
-                return {}
-            
-            with open(self.token_cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            
-            if not isinstance(data, dict):
-                return {}
 
+        try:
             cached_device_id = data.get("device_id")
             if self.device_id and isinstance(cached_device_id, str) and cached_device_id != self.device_id:
                 return {}
@@ -137,30 +127,17 @@ class CrunchyrollClient:
 
     def _save_token_cache(self) -> None:
         """Save current authentication tokens to cache file."""
-        if not self.token_cache_path:
-            return
-        
-        try:
-            cache_dir = os.path.dirname(self.token_cache_path)
-            if cache_dir:
-                os.makedirs(cache_dir, exist_ok=True)
-            
-            payload = {
-                "device_id": self.device_id,
-                "account_id": self.account_id,
-                "access_token": self.access_token,
-                "refresh_token": self.refresh_token,
-                "expires_at": self.expires_at,
-                "user_agent": self.user_agent,
-                "api_base_url": self.api_base_url,
-                "saved_at": time.time(),
-            }
-
-            with open(self.token_cache_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
-
-        except Exception as e:
-            logger.error(f"Token cache save failed: {e}")
+        payload = {
+            "device_id": self.device_id,
+            "account_id": self.account_id,
+            "access_token": self.access_token,
+            "refresh_token": self.refresh_token,
+            "expires_at": self.expires_at,
+            "user_agent": self.user_agent,
+            "api_base_url": self.api_base_url,
+            "saved_at": time.time(),
+        }
+        disk_cache.save("crunchyroll", "token", payload)
 
     def _get_headers(self) -> Dict:
         """Generate HTTP headers for API requests including authorization."""
@@ -262,7 +239,7 @@ class CrunchyrollClient:
             return
         
         # Refresh if expiring soon
-        if time.time() >= (self.expires_at - 30):
+        if not disk_cache.is_fresh({"expiry": self.expires_at}, buffer_seconds=30):
             try:
                 self._refresh()
             except Exception:

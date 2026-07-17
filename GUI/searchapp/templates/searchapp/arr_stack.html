@@ -1,25 +1,25 @@
 {% extends "searchapp/base.html" %}
 
-{% block title %}Coda ARR VibraVid{% endblock %}
+{% block title %}VibraVid ARR Queue{% endblock %}
 
 {% block content %}
 <div class="py-8 sm:py-12 animate-fade-in">
   <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mb-8">
     <div>
       <h1 class="text-3xl sm:text-4xl font-bold text-white mb-2">
-        Coda <span class="text-red-500">ARR</span>
+        ARR <span class="text-red-500">Queue</span>
       </h1>
       <p class="text-gray-400">
-        Item presi in carico da VibraVid tramite Sonarr, Radarr, webhook e polling.
+        Items picked up by VibraVid via Sonarr, Radarr, webhook and polling.
       </p>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
       <span class="box-border h-10 px-3 py-0 rounded-lg border inline-flex items-center {% if arr_enabled %}border-green-500/40 bg-green-500/10 text-green-300{% else %}border-gray-700 bg-gray-900 text-gray-400{% endif %} text-sm font-semibold leading-5">
-        ARR {% if arr_enabled %}attivo{% else %}disattivo{% endif %}
+        ARR {% if arr_enabled %}enabled{% else %}disabled{% endif %}
       </span>
       <span class="box-border h-10 px-3 py-0 rounded-lg border inline-flex items-center {% if polling_enabled %}border-blue-500/40 bg-blue-500/10 text-blue-300{% else %}border-gray-700 bg-gray-900 text-gray-400{% endif %} text-sm font-semibold leading-5">
-        Polling {% if polling_enabled %}attivo{% else %}disattivo{% endif %}
+        Polling {% if polling_enabled %}enabled{% else %}disabled{% endif %}
       </span>
       <button
         type="button"
@@ -30,18 +30,18 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
         </svg>
-        <span>Sync manuale</span>
+        <span>Manual sync</span>
       </button>
     </div>
   </div>
 
   <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 mb-8">
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Totale</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Total</span>
       <span class="text-2xl font-black text-white">{{ total_count }}</span>
     </div>
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Attivi</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Active</span>
       <span class="text-2xl font-black text-blue-300">{{ active_count }}</span>
     </div>
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
@@ -53,15 +53,15 @@
       <span class="text-2xl font-black text-blue-300">{{ status_counts.downloading|default:"0" }}</span>
     </div>
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Completati</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Completed</span>
       <span class="text-2xl font-black text-green-300">{{ status_counts.completed|default:"0" }}</span>
     </div>
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Falliti</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Failed</span>
       <span class="text-2xl font-black text-red-300">{{ status_counts.failed|default:"0" }}</span>
     </div>
     <div class="bg-gray-900/60 border border-gray-800 rounded-lg p-4">
-      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Saltati</span>
+      <span class="text-[10px] font-bold uppercase tracking-widest text-gray-500 block mb-1">Skipped</span>
       <span class="text-2xl font-black text-gray-300">{{ status_counts.skipped|default:"0" }}</span>
     </div>
   </div>
@@ -74,11 +74,11 @@
         type="search"
         name="q"
         value="{{ filters.q }}"
-        placeholder="Cerca titolo, provider, ID o dedup key"
+        placeholder="Search title, provider, ID or dedup key"
         class="box-border h-10 px-3 py-0 rounded-lg bg-black/40 border border-gray-700 text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500 leading-5"
       >
       <select name="status" class="box-border h-10 px-3 py-0 rounded-lg bg-black/40 border border-gray-700 text-white focus:outline-none focus:border-red-500 leading-5">
-        <option value="all" {% if filters.status == "all" %}selected{% endif %}>Tutti gli stati</option>
+        <option value="all" {% if filters.status == "all" %}selected{% endif %}>All statuses</option>
         {% for value,label in status_choices %}
         <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
@@ -89,19 +89,19 @@
         <option value="radarr" {% if filters.source == "radarr" %}selected{% endif %}>Radarr</option>
       </select>
       <select name="sync" class="box-border h-10 px-3 py-0 rounded-lg bg-black/40 border border-gray-700 text-white focus:outline-none focus:border-red-500 leading-5">
-        <option value="all" {% if filters.sync == "all" %}selected{% endif %}>Tutte le origini</option>
+        <option value="all" {% if filters.sync == "all" %}selected{% endif %}>All sources</option>
         {% for value,label in sync_choices %}
         <option value="{{ value }}" {% if filters.sync == value %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       <button type="submit" class="box-border h-10 px-5 py-0 bg-white hover:bg-gray-200 border border-white hover:border-gray-200 text-black font-bold rounded-lg transition-colors text-sm inline-flex items-center justify-center leading-5">
-        Filtra
+        Filter
       </button>
     </div>
   </form>
 
   <div class="mb-3 text-sm text-gray-500">
-    Mostrati {{ shown_count }} item{% if filtered_count > 300 %} (limite pagina: 300){% endif %}.
+    Showing {{ shown_count }} items{% if filtered_count > 300 %} (page limit: 300){% endif %}.
   </div>
 
   <div class="bg-gray-900/50 border border-gray-800 rounded-lg overflow-hidden">
@@ -111,10 +111,10 @@
         <thead class="bg-black/30">
           <tr>
             <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Item</th>
-            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Stato</th>
-            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Origine</th>
-            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Coda</th>
-            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Date</th>
+            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Status</th>
+            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Source</th>
+            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Queue</th>
+            <th class="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-gray-500">Dates</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-800">
@@ -124,7 +124,7 @@
             <td class="px-4 py-4 align-top">
               <div class="font-bold text-white">{{ item.title }}</div>
               <div class="text-xs text-gray-400 mt-1">
-                {% if item.content_type == "movie" %}Film{% else %}Serie{% endif %}
+                {% if item.content_type == "movie" %}Movie{% else %}Series{% endif %}
                 {% if item.year %} · {{ item.year }}{% endif %}
                 {% if item.season_number %} · S{{ item.season_number|stringformat:"02d" }}{% endif %}
                 {% if item.episode_number %}E{{ item.episode_number|stringformat:"02d" }}{% endif %}
@@ -144,7 +144,7 @@
                 {{ item.get_status_display }}
               </span>
               <div class="text-xs text-gray-500 mt-2">
-                {% if entry.success == True %}Successo{% elif entry.success == False %}Chiuso senza successo{% else %}In corso / in attesa{% endif %}
+                {% if entry.success == True %}Success{% elif entry.success == False %}Closed without success{% else %}In progress / pending{% endif %}
               </div>
             </td>
             <td class="px-4 py-4 align-top text-sm">
@@ -161,10 +161,10 @@
               </div>
             </td>
             <td class="px-4 py-4 align-top text-xs text-gray-400 whitespace-nowrap">
-              <div>Accodato: {{ entry.enqueued_at|date:"d/m/Y H:i" }}</div>
-              <div>Avviato: {% if entry.started_at %}{{ entry.started_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div>
-              <div>Chiuso: {% if entry.completed_at %}{{ entry.completed_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div>
-              <div>Aggiornato: {{ item.updated_at|date:"d/m/Y H:i" }}</div>
+              <div>Queued: {{ entry.enqueued_at|date:"d/m/Y H:i" }}</div>
+              <div>Started: {% if entry.started_at %}{{ entry.started_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div>
+              <div>Closed: {% if entry.completed_at %}{{ entry.completed_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div>
+              <div>Updated: {{ item.updated_at|date:"d/m/Y H:i" }}</div>
             </td>
           </tr>
           {% endwith %}
@@ -179,8 +179,8 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 12h14M5 16h10"></path>
         </svg>
       </div>
-      <h2 class="text-lg font-bold text-white mb-2">Nessun item nella coda ARR</h2>
-      <p class="text-gray-500">Quando VibraVid prende in carico richieste da Sonarr/Radarr, appariranno qui.</p>
+      <h2 class="text-lg font-bold text-white mb-2">No items in the ARR queue</h2>
+      <p class="text-gray-500">When VibraVid picks up requests from Sonarr/Radarr, they'll appear here.</p>
     </div>
     {% endif %}
   </div>
@@ -212,8 +212,8 @@
     const originalText = label ? label.textContent : '';
 
     if (btn) btn.disabled = true;
-    if (label) label.textContent = 'Sync in corso...';
-    showArrStackSyncMessage('Sync manuale avviato...', 'info');
+    if (label) label.textContent = 'Syncing...';
+    showArrStackSyncMessage('Manual sync started...', 'info');
 
     try {
       const response = await fetch('{% url "arr_trigger_sync" %}', {
@@ -223,15 +223,15 @@
       const data = await response.json();
 
       if (!response.ok || data.status === 'error' || data.status === 'disabled') {
-        throw new Error(data.message || 'Impossibile avviare il sync');
+        throw new Error(data.message || 'Unable to start sync');
       }
 
-      showArrStackSyncMessage('Sync avviato in background. La pagina si aggiorna tra pochi secondi.', 'success');
+      showArrStackSyncMessage('Sync started in background. The page will refresh in a few seconds.', 'success');
       setTimeout(() => window.location.reload(), 3000);
     } catch (error) {
-      showArrStackSyncMessage(`Errore: ${error.message}`, 'error');
+      showArrStackSyncMessage(`Error: ${error.message}`, 'error');
       if (btn) btn.disabled = false;
-      if (label) label.textContent = originalText || 'Sync manuale';
+      if (label) label.textContent = originalText || 'Manual sync';
     }
   }
 </script>

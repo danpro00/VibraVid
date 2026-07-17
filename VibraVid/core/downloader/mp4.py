@@ -8,9 +8,8 @@ import threading
 import time
 from contextlib import nullcontext
 from functools import partial
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
-from rich.console import Console
 from rich.progress import Progress, TextColumn
 
 from VibraVid.utils.http_client import create_client, get_userAgent
@@ -21,15 +20,14 @@ from VibraVid.core.muxing.helper.video import get_media_metadata
 from VibraVid.core.muxing import inject_chapters
 from VibraVid.core.ui.progress_bar import CustomBarColumn
 from VibraVid.core.ui.tracker import download_tracker, context_tracker
-from VibraVid.core.ui.bar_manager import DownloadBarManager
+from VibraVid.core.ui.bar_manager import DownloadBarManager, console
 
 from .util._interrupt import InterruptHandler
-from .util._drm_probe import DRMProbe, PROBE_BYTES
+from .util._drm_probe import DRMProbe, PROBE_BYTES, PROBE_BYTES_FAST
 from .util._post_decrypt import PostDownloadDecryptor
 from .util._supa_tracker import SupaTracker
 
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 SKIP_DOWNLOAD = config_manager.config.get_bool('DOWNLOAD', 'skip_download')
@@ -41,13 +39,34 @@ class MP4FileDownloader:
     _decryptor = PostDownloadDecryptor()
     _tracker = SupaTracker()
 
-    def __init__(self,url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None) -> None:
+    def __init__(self,url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None, check_content_type: bool = True, sanitize_path: bool = True) -> None:
+        """
+        Initialize the MP4FileDownloader.
+
+        Args:
+            url: The URL of the MP4 file to download.
+            path: The local path where the file will be saved.
+            referer: The referer header for the request.
+            headers_: Additional headers for the request.
+            download_id: A unique identifier for the download.
+            site_name: The name of the site from which the file is being downloaded.
+            label: A label for the download task.
+            key: The decryption key for the file.
+            max_percentage: The maximum percentage of the file to download.
+            chapters: A list of chapters to include in the download.
+            check_content_type: Whether to check the content type of the response.
+            sanitize_path: Whether to sanitize the local path.
+
+        Returns:
+            None
+        """
         self.url = str(url).strip()
-        self.path = os_manager.get_sanitize_path(path)
+        self.path = os_manager.get_sanitize_path(path) if sanitize_path else str(path)
         self.referer = referer
         self.headers_ = headers_
         self.label = label
         self.key = key
+        self.check_content_type = check_content_type
         self.max_percentage = self._normalize_max_percentage(max_percentage)
         self.chapters = chapters if chapters is not None else context_tracker.chapters
 
@@ -66,6 +85,7 @@ class MP4FileDownloader:
         # In-flight DRM probe state
         self._probe_buf: bytearray = bytearray()
         self._probe_done: bool = False
+        self._probe_encrypted: bool = False
 
     @staticmethod
     def _normalize_max_percentage(value: Optional[float]) -> float:
@@ -95,17 +115,27 @@ class MP4FileDownloader:
         
         self._install_signal_handler()
 
-        client = create_client(headers=headers)
-        try:
-            if not self._check_content_type(client, headers):
-                return None, False, None
+        bar_mgr = DownloadBarManager(self.download_id)
+        with bar_mgr as progress_bars:
+            try:
+                progress_bars.add_prebuilt_tasks([("video", self.label)])
+            except Exception:
+                pass
 
-            self._stream_to_disk(client, headers)
+            client = create_client(headers=headers)
+            try:
+                if self.check_content_type and not self._check_content_type(client, headers):
+                    return None, False, None
 
-        finally:
-            client.close()
+                if self.check_content_type:
+                    self._preflight_probe(client, headers)
 
-        return self._finalise()
+                self._stream_to_disk(client, headers, bar_mgr)
+
+            finally:
+                client.close()
+
+            return self._finalise(bar_mgr)
 
     def _preflight(self) -> bool:
         if SKIP_DOWNLOAD:
@@ -186,6 +216,20 @@ class MP4FileDownloader:
 
         return False
 
+    def _preflight_probe(self, client, headers: dict) -> None:
+        """Cheap Range probe (PROBE_BYTES_FAST) run before the real download starts"""
+        try:
+            encrypted, scheme, drm_names, kid, pssh_b64 = self._probe.probe(self.url, headers, client, size=PROBE_BYTES_FAST)
+        except Exception as exc:
+            logger.debug(f"Preflight DRM probe failed (non-fatal): {exc}")
+            return
+
+        if not encrypted:
+            return  # inconclusive at this size — let the in-flight probe keep looking
+
+        self._probe_done = True
+        self._resolve_from_probe(encrypted, scheme, drm_names, kid, pssh_b64)
+
     def _feed_probe(self, chunk: bytes) -> None:
         """Accumulate the first ~4 MB of the *live* download and inspect them in-flight
         (no second request). Runs the DRM check exactly once, then releases the buffer."""
@@ -213,18 +257,48 @@ class MP4FileDownloader:
 
     def _evaluate_probe(self, raw: bytes) -> None:
         logger.info("Probing first 4 MB for DRM/encryption markers (in-flight)")
-        encrypted, scheme, drm_names = self._probe.inspect(raw)
+        encrypted, scheme, drm_names, kid, pssh_b64 = self._probe.inspect(raw)
+        self._resolve_from_probe(encrypted, scheme, drm_names, kid, pssh_b64)
 
-        if encrypted:
-            if not PostDownloadDecryptor.has_keys(self.key):
-                console.print(f"[red]Warning:[/red] stream appears [red]encrypted[/red] ([cyan]{', '.join(drm_names) or 'unknown DRM'}[/cyan]) but [red]no decryption keys[/red] were provided — the downloaded file will remain encrypted.")
-                logger.warning(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) but no keys provided.")
-            else:
-                logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — keys present, will decrypt after download.")
-        else:
+    def _resolve_from_probe(self, encrypted: bool, scheme: Optional[str], drm_names: list, kid: Optional[str], pssh_b64: Optional[str]) -> None:
+        """Shared outcome handling for both the fast preflight probe and the in-flight fallback"""
+        if not encrypted:
             logger.info("Probe: no encryption markers found — clear stream.")
+            return
 
-    def _stream_to_disk(self, client, headers: dict) -> None:
+        self._probe_encrypted = True
+
+        if not kid:
+            if PostDownloadDecryptor.has_keys(self.key):
+                logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — no KID found yet, keys present, will decrypt after download.")
+            else:
+                console.print(f"[yellow]Stream appears [red]encrypted[/red] ([cyan]{', '.join(drm_names) or 'unknown DRM'}[/cyan]), no KID found yet and no key provided.")
+                logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — no KID, no manual key.")
+            return
+
+        from VibraVid.core.drm.manager import DRMManager
+        mgr = DRMManager()
+        resolved = mgr.resolve_flat_key(kid, pssh_b64, self.key, drm_type=scheme or "mp4")
+
+        if resolved:
+            resolved_key, source = resolved
+            self.key = resolved_key
+            drm_label = ", ".join(drm_names) if drm_names else (scheme or "mp4").upper()
+            if source == "manual":
+                mgr._display_keys([resolved_key], [], drm_label, pssh_b64, None, header=True, default_label="manual")
+            else:
+                mgr._display_keys([resolved_key], [resolved_key], drm_label, pssh_b64, source, header=True)
+            logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — key resolved (kid={kid}, source={source}).")
+            return
+
+        if PostDownloadDecryptor.has_keys(self.key):
+            logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — keys present, will decrypt after download.")
+            return
+
+        console.print(f"[yellow]Stream appears [red]encrypted[/red] ([cyan]{', '.join(drm_names) or 'unknown DRM'}[/cyan]), no key in vault or provided.")
+        logger.info(f"Probe: encrypted ({scheme or 'unknown'}, DRM=[{', '.join(drm_names)}]) — no manual key, none in vault.")
+
+    def _stream_to_disk(self, client, headers: dict, bar_mgr: DownloadBarManager) -> None:
         response = client.get(self.url, stream=True)
         try:
             response.raise_for_status()
@@ -232,20 +306,12 @@ class MP4FileDownloader:
             self._downloaded = 0
             self._incomplete_err = False
             self._probe_buf = bytearray()
-            self._probe_done = False
 
             if self._total is None:
                 logger.error("No Content-Length — streaming until connection closes.")
 
-            bar_mgr = DownloadBarManager(self.download_id)
-            with bar_mgr as progress_bars:
-                try:
-                    progress_bars.add_prebuilt_tasks([("video", self.label)])
-                except Exception:
-                    pass
-
-                with open(self._temp_path, "wb") as fh:
-                    self._write_chunks(fh, response, progress_bars, time.time(), bar_mgr)
+            with open(self._temp_path, "wb") as fh:
+                self._write_chunks(fh, response, bar_mgr, time.time(), bar_mgr)
         finally:
             response.close()
 
@@ -382,7 +448,20 @@ class MP4FileDownloader:
             except Exception:
                 pass
 
-    def _finalise(self) -> tuple:
+    def _run_decrypt(self, bar_mgr: DownloadBarManager) -> None:
+        """Decrypt while continuing the same "video" bar in place."""
+        def _decrypt_cb(parsed: Optional[Dict[str, Any]]) -> None:
+            if not parsed:
+                return
+            bar_mgr.handle_progress_line({
+                "task_key": "video",
+                "pct": parsed.get("pct"),
+                "speed": parsed.get("status") or "Decrypt",
+            })
+
+        self._decryptor.run(self.path, self.key, self.download_id, progress_cb=_decrypt_cb)
+
+    def _finalise(self, bar_mgr: DownloadBarManager) -> tuple:
 
         # Temp file missing entirely
         if not os.path.exists(self._temp_path):
@@ -402,9 +481,9 @@ class MP4FileDownloader:
             if not self._rename_temp():
                 return None, True, self._incomplete_err
 
-            # Try decryption even on partial files when keys are available.
-            if PostDownloadDecryptor.has_keys(self.key):
-                self._decryptor.run(self.path, self.key, self.download_id)
+            # Try decryption even on partial files when keys are available
+            if self._probe_encrypted or PostDownloadDecryptor.has_keys(self.key):
+                self._run_decrypt(bar_mgr)
 
             self._resolve_media_tokens()
 
@@ -428,7 +507,7 @@ class MP4FileDownloader:
 
         # Post-download decryption
         if PostDownloadDecryptor.has_keys(self.key):
-            self._decryptor.run(self.path, self.key, self.download_id)
+            self._run_decrypt(bar_mgr)
 
         # Chapters, as the final muxing step (mirrors BaseDownloader._inject_chapters).
         if self.chapters:
@@ -459,8 +538,7 @@ class MP4FileDownloader:
 
         return self.path, self._interrupt.kill_download, None
 
-    # Tokens whose value is only known after probing the finished file.
-    _MEDIA_PLACEHOLDERS = ("%(quality)", "%(language)", "%(video_codec)", "%(audio_codec)")
+    _MEDIA_PLACEHOLDERS = ("%(quality)", "%(language)", "%(video_codec)", "%(audio_codec)", "%(audio_flags)", "%(sub_flags)")
 
     def _resolve_media_tokens(self) -> None:
         """Probe the finished file and resolve media tokens (quality/codec/language) in self.path.
@@ -481,6 +559,8 @@ class MP4FileDownloader:
                 "language": metadata.get("language", ""),
                 "video_codec": metadata.get("video_codec", ""),
                 "audio_codec": metadata.get("audio_codec", ""),
+                "audio_flags": metadata.get("audio_flags", ""),
+                "sub_flags": metadata.get("sub_flags", ""),
             }
 
             root, ext = os.path.splitext(self.path)
@@ -525,7 +605,7 @@ class MP4FileDownloader:
         return False
 
 
-def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None) -> tuple:
+def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_: Optional[dict] = None, download_id: Optional[str] = None, site_name: Optional[str] = None, label: str = "MP4", key: Any = None, max_percentage: Optional[float] = None, chapters: Optional[list] = None, check_content_type: bool = True, sanitize_path: bool = True) -> tuple:
     """Backward-compatible entry point — wraps ``MP4FileDownloader.download()``."""
     if try_fetch(path):
         return path, False, None
@@ -541,6 +621,8 @@ def MP4_Downloader(url: str, path: str, referer: Optional[str] = None, headers_:
         key=key,
         max_percentage=max_percentage,
         chapters=chapters,
+        check_content_type=check_content_type,
+        sanitize_path=sanitize_path,
     ).download()
 
     if isinstance(result, tuple) and len(result) >= 3 and result[0] and not result[1] and not result[2]:

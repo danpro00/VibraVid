@@ -80,19 +80,6 @@ class ColoredSegmentColumn(ProgressColumn):
         return text
 
 
-class SizeColumn(ProgressColumn):
-    def render(self, task):
-        size = task.fields.get("size", "0B/0B")
-        text = Text()
-        if "/" in size:
-            current, total = size.split("/")
-            text.append(current, style="dim")
-            text.append("/", style="dim")
-            text.append(total, style="green")
-        else:
-            text.append(size, style="green")
-        return text
-
 class TransferStatsColumn(ProgressColumn):
     def render(self, task):
         if task.fields.get("compact_metrics"):

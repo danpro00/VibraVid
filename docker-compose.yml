@@ -1,4 +1,28 @@
 services:
+  flaresolverr:
+    profiles: ["flaresolverr"]
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: ${FLARESOLVERR_CONTAINER_NAME:-flaresolverr}
+    environment:
+      LOG_LEVEL: "info"
+    ports:
+      - "8191:8191"
+    networks:
+      - vibravid_network
+    restart: unless-stopped
+
+  bypasser:
+    profiles: ["bypasser"]
+    build:
+      context: ./docker/bypasser
+    container_name: ${BYPASSER_CONTAINER_NAME:-bypasser}
+    shm_size: "1gb"
+    ports:
+      - "8192:8192"
+    networks:
+      - vibravid_network
+    restart: unless-stopped
+
   vibravid:
     image: ghcr.io/astraelabs/vibravid:${VIBRAVID_TAG:-latest}
     build:
@@ -16,6 +40,17 @@ services:
     networks:
       - vibravid_network
 
+    ### Service dependencies
+    # Both sidecars are optional (see their "profiles" above) and gated with
+    # required: false so `docker compose up` works fine with neither enabled.
+    depends_on:
+      flaresolverr:
+        condition: service_started
+        required: false
+      bypasser:
+        condition: service_started
+        required: false
+
     ### Volumes - Persistent Data
     volumes:
       # SQLite DB + any future per-install state (isolated dir, does NOT overlay app code).
@@ -25,7 +60,7 @@ services:
       # (e.g. /volume2/Movies on a NAS). Named volume used when variable is not set.
       - ${VIBRAVID_VIDEO_DIR:-vibravid_videos}:/app/Video
       # Logs persistence
-      - ${VIBRAVID_LOGS_DIR:-vibravid_logs}:/app/logs
+      - ${VIBRAVID_LOGS_DIR:-vibravid_logs}:/app/.cache/logs
       # Configuration persistence
       - ${VIBRAVID_CONFIG_DIR:-vibravid_config}:/app/Conf
       # Docker socket — enables the in-app "Update now" button to pull the new
@@ -58,6 +93,10 @@ services:
       # Host Configuration
       ALLOWED_HOSTS: "localhost,127.0.0.1"
       CSRF_TRUSTED_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
+
+      # ── Cloudflare-challenge solver sidecars ──
+      FLARESOLVERR_URL: "http://flaresolverr:8191"
+      BYPASSER_URL: "http://bypasser:8192"
       
       # Uncomment for private network deployment (behind reverse proxy)
       # USE_X_FORWARDED_HOST: "true"

@@ -189,6 +189,8 @@ def setup_argument_parser(search_functions, site_module=None, extra_site_modules
     dl_group.add_argument('--drm', choices=['widevine', 'playready', 'auto'], default='auto', help='DRM system (default: auto)')
     dl_group.add_argument('--max-segments', dest='max_segments', type=int, default=None, metavar='N', help='Limit download to first N segments (HLS/DASH/ISM)')
     dl_group.add_argument('--max-time', dest='max_time', type=str, default=None, metavar='HH:MM:SS|SEC', help='Limit downloaded duration, e.g. "00:05:00" or 300 (HLS/DASH/ISM)')
+    dl_group.add_argument('--skip-content-check', dest='skip_content_check', action='store_true', help='Skip the preflight HEAD content-type check for MP4 direct downloads (--type mp4). Needed for single-use download URLs where a HEAD request consumes the link.')
+    dl_group.add_argument('--skip-sanitize', dest='skip_sanitize', action='store_true', help='Use the -o output path verbatim (MP4/HLS/DASH/ISM direct downloads), skipping path sanitization (which transliterates non-ASCII characters). Use when the caller already built/created the exact destination path.')
 
     # ── Utility
     util_group = parser.add_argument_group('Utility')

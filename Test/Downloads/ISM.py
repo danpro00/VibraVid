@@ -30,9 +30,8 @@ dash_process = ISM_Downloader(
     headers=ism_headers,
     license_url=license_url,
     license_headers=license_headers,
-    output_path=fr".\Video\1.{conf_extension}",
-    key=license_key,
-    drm_preference=DRMType.WIDEVINE
+    output_path=fr".\Video\ISM.{conf_extension}",
+    key=license_key
 )
 
 

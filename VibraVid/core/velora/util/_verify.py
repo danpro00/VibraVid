@@ -96,20 +96,20 @@ def _mp4dump_clean(file_path: str) -> Tuple[bool, str]:
     return True, "no residual encryption boxes"
 
 
-def verify_decrypted_media(file_path) -> Tuple[bool, str]:
+def verify_decrypted_media(file_path) -> Tuple[bool, str, bool]:
     """Verify that *file_path* is a playable, fully decrypted media file."""
     p = Path(file_path)
     if not p.exists():
-        return False, "output file missing"
+        return False, "output file missing", False
 
     if p.stat().st_size == 0:
-        return False, "output file is empty"
+        return False, "output file is empty", False
 
     ok, ffprobe_msg = _ffprobe_streams(get_ffprobe_path(), str(p))
     if not ok:
-        return False, ffprobe_msg
+        return False, ffprobe_msg, "encrypted" in ffprobe_msg.lower()
 
     clean, mp4dump_msg = _mp4dump_clean(str(p))
     if not clean:
-        return False, f"{ffprobe_msg}; {mp4dump_msg}"
-    return True, f"{ffprobe_msg}; {mp4dump_msg}"
+        return False, f"{ffprobe_msg}; {mp4dump_msg}", True
+    return True, f"{ffprobe_msg}; {mp4dump_msg}", False

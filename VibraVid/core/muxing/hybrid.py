@@ -10,7 +10,9 @@ from typing import Any, Dict, Iterable, List, Optional
 from rich.console import Console
 
 from VibraVid.core.muxing.helper.info import Mediainfo
+from VibraVid.core.muxing.helper._ffprobe_cache import ffprobe_cached
 from VibraVid.core.muxing.helper.video import get_media_metadata, is_mpegts_file
+from VibraVid.core.utils.language import resolve_ietf
 from VibraVid.core.muxing.helper.audio.probe import get_video_duration
 from VibraVid.core.muxing.capture import capture_ffmpeg_real_time
 from VibraVid.core.ui.tracker import context_tracker
@@ -65,35 +67,8 @@ def _run_progress_command(cmd: List[str], label: str, input_path: Path, output_p
     return bool(result)
 
 
-def _normalize_language(value: str) -> str:
-    """Return a valid IETF BCP 47 language tag, stripping any non-standard suffixes"""
-    raw = (value or "und").strip().replace("_", "-")
-    if not raw:
-        return "und"
-    
-    parts = raw.split("-")
-    result: List[str] = []
-    for i, part in enumerate(parts):
-        if i == 0:
-            if re.match(r'^[a-zA-Z]{2,8}$', part):
-                result.append(part.lower())
-            else:
-                return "und"
-            
-        elif i == 1:
-            if re.match(r'^[a-zA-Z]{2}$', part):    # region: 2 letters (US, FR, …)
-                result.append(part.upper())
-            elif re.match(r'^[0-9]{3}$', part):     # numeric region: 3 digits (419, …)
-                result.append(part)
-            
-            # else: skip non-standard subtag (sdh, cc, forced, etc.) and stop
-            break
-
-    return "-".join(result) if result else "und"
-
-
 def _track_language(track: Dict[str, Any]) -> str:
-    return _normalize_language(track.get("language") or track.get("lang") or "und")
+    return resolve_ietf(track.get("language") or track.get("lang") or "und")
 
 
 def _track_name(track: Dict[str, Any], fallback: str) -> str:
@@ -101,6 +76,7 @@ def _track_name(track: Dict[str, Any], fallback: str) -> str:
     return name or fallback or "und"
 
 
+@ffprobe_cached
 def probe_media_file(file_path: str) -> Dict[str, Any]:
     """Probe a media file and return rich metadata for hybrid decisions."""
     probe: Dict[str, Any] = {}

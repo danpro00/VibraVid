@@ -22,7 +22,6 @@ from VibraVid.core.muxing.helper.audio import audio_ext_for_codec
 from VibraVid.utils.vault_upload.hook import upload_after
 from VibraVid.setup import get_ffmpeg_path
 
-from VibraVid.core.velora.util._verify import verify_decrypted_media
 from VibraVid.core.muxing.helper.video_hybrid import download_other_tracks
 from VibraVid.utils.hooks import execute_hooks
 
@@ -72,12 +71,12 @@ def _append_tracks_json(payload: dict) -> None:
 
 
 class BaseDownloader:
-    def __init__(self, output_path: str, temp_suffix: str, **kwargs):
+    def __init__(self, output_path: str, temp_suffix: str, sanitize_path: bool = True, **kwargs):
         """Common initialisation shared by DASH / HLS / ISM sub-classes."""
         if not output_path:
             output_path = f"download.{EXTENSION_OUTPUT}"
-            
-        self.output_path = os_manager.get_sanitize_path(output_path)
+
+        self.output_path = os_manager.get_sanitize_path(output_path) if sanitize_path else str(output_path)
         if not self.output_path.endswith(f".{EXTENSION_OUTPUT}"):
             self.output_path += f".{EXTENSION_OUTPUT}"
 
@@ -575,27 +574,27 @@ class BaseDownloader:
             logger.warning(f"Audio remux error: {e}; falling back to raw move")
         shutil.move(src, os.path.splitext(dst)[0] + os.path.splitext(src)[1])
 
-    def _verify_output(self) -> None:
-        """
-        Post-mux sanity check: confirm the final file is playable and carries no residual encryption boxes.
-        """
+    def _verify_output(self) -> bool:
+        """Authoritative decryption check."""
+        global LAST_DOWNLOADER_ERROR
         try:
-            path = self.output_path
-            if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
-                return
+            md = getattr(self, "media_downloader", None)
+            failures = list(getattr(md, "decrypt_failures", []) or [])
+            if not failures:
+                return True
 
-            ok, message = verify_decrypted_media(path)
-            if ok:
-                logger.info(f"Output verification OK for {os.path.basename(path)}: {message}")
-                return
-
-            logger.error(f"Output verification FAILED for {os.path.basename(path)}: {message}")
-            console.print(f"[red]Output verification FAILED for {os.path.basename(path)}: {message}[/red]")
+            labels = ", ".join(dict.fromkeys(f.get("label") or f.get("track") or "?" for f in failures))
+            detail = failures[0].get("message", "")
+            err = f"Decryption failed - track(s) still encrypted: {labels}"
+            logger.error(f"Decryption verification FAILED for {os.path.basename(self.output_path or '')}: {err} ({detail})")
+            LAST_DOWNLOADER_ERROR = err
+            self.error = err
+            return False
         except Exception as exc:
             logger.warning(f"Output verification skipped due to error: {exc}")
+            return True
 
-    # Tokens whose value is only known after probing the muxed file.
-    _MEDIA_PLACEHOLDERS = ("%(quality)", "%(language)", "%(video_codec)", "%(audio_codec)")
+    _MEDIA_PLACEHOLDERS = ("%(quality)", "%(language)", "%(video_codec)", "%(audio_codec)", "%(audio_flags)", "%(sub_flags)")
 
     @classmethod
     def _strip_media_tokens(cls, path: str) -> str:
@@ -624,7 +623,9 @@ class BaseDownloader:
                     "quality": metadata.get("quality", ""),
                     "language": metadata.get("language", ""),
                     "video_codec": metadata.get("video_codec", ""),
-                    "audio_codec": metadata.get("audio_codec", "")
+                    "audio_codec": metadata.get("audio_codec", ""),
+                    "audio_flags": metadata.get("audio_flags", ""),
+                    "sub_flags": metadata.get("sub_flags", ""),
                 }
 
                 # Resolve placeholders on the template's name root
@@ -657,13 +658,15 @@ class BaseDownloader:
 
         self._move_copied_subtitles()
         self._move_copied_audios()
-        self._verify_output()
+        verified_ok = self._verify_output()
 
         if self.download_id:
-            download_tracker.complete_download(self.download_id, success=True, path=os.path.abspath(self.output_path))
+            download_tracker.complete_download(self.download_id, success=verified_ok, path=os.path.abspath(self.output_path), error=None if verified_ok else LAST_DOWNLOADER_ERROR)
 
         if CLEANUP_TMP:
             shutil.rmtree(self.output_dir, ignore_errors=True)
 
-        upload_after(self.output_path)
+        # Never publish a file that failed decryption verification.
+        if verified_ok:
+            upload_after(self.output_path)
         execute_hooks("post_run")

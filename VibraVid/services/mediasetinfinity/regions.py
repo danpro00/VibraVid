@@ -1,45 +1,13 @@
 # 21.05.24
 
+import json
+from pathlib import Path
+
 from VibraVid.core.ui.tracker import context_tracker
 
 DEFAULT_REGION = "it"
-
-REGIONS = {
-    "it": {
-        "label": "Italia",
-        "home_url": "https://mediasetinfinity.mediaset.it/",
-        "site_base": "https://mediasetinfinity.mediaset.it",
-        "origin": "https://mediasetinfinity.mediaset.it",
-        "login_url": "https://api-ott-prod-fe.mediaset.net/PROD/play/idm/anonymous/login/v2.0",
-        "playback_url": "https://api-ott-prod-fe.mediaset.net/PROD/play/playback/check/v2.0",
-        "playback_api": "v2",
-        "graphql_url": "https://mediasetplay.api-graph.mediaset.it/",
-        "property": "MPLAY",
-        "login_key": "mediasetinfinity",
-        "feed_public_id": "PR1GhC",
-        "geo": "geoIT|geoNo",
-        "image_region": "ita",
-        "qualities_full": ("HD", "HR", "SD", "SS"),
-        "qualities_anon": ("HR", "SD", "SS"),
-    },
-    "es": {
-        "label": "Espana",
-        "home_url": "https://www.mediasetinfinity.es/",
-        "site_base": "https://www.mediasetinfinity.es",
-        "origin": "https://www.mediasetinfinity.es",
-        "login_url": "https://services-ott-prod-fe.mediaset.net/esp/idm/v3.0/anonymous/login",
-        "playback_url": "https://services-ott-prod-fe.mediaset.net/esp/playback/v3.0/check",
-        "playback_api": "v3",
-        "graphql_url": "https://ottesp.api-graph.mediaset.it/",
-        "property": "MITELE",
-        "login_key": "mediasetinfinityes",
-        "feed_public_id": "PR1GhC",
-        "geo": "geoES|geoNo",
-        "image_region": "esp",
-        "qualities_full": ("4K", "HD", "HR", "SD", "SS"),
-        "qualities_anon": ("HR", "SD", "SS"),
-    },
-}
+_REGIONS_FILE = Path(__file__).with_name("regions.json")
+REGIONS: dict = json.loads(_REGIONS_FILE.read_text(encoding="utf-8"))
 
 
 def get_region() -> str:

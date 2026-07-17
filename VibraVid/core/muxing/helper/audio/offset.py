@@ -14,11 +14,13 @@ from VibraVid.setup import get_ffmpeg_path
 logger = logging.getLogger(__name__)
 
 
-def _extract_mono_wav(input_path: str, output_wav: str, sample_rate: int) -> bool:
+def _extract_mono_wav(input_path: str, output_wav: str, sample_rate: int, duration_seconds: Optional[float] = None) -> bool:
     """Extract a mono WAV from the input media file using FFmpeg, resampling to sample_rate."""
-    cmd = [
-        get_ffmpeg_path(), "-y",
-        "-i", input_path,
+    cmd = [get_ffmpeg_path(), "-y", "-i", input_path]
+    if duration_seconds:
+        cmd += ["-t", str(duration_seconds)]
+    
+    cmd += [
         "-ac", "1",
         "-ar", str(sample_rate),
         "-vn",
@@ -51,7 +53,7 @@ def _to_mono(data, channel: int = 0):
     return data[:, ch]
 
 
-def detect_audio_offset(reference_path: str, target_path: str, max_offset_seconds: float = 30.0, sample_rate: int = 8000, mono_channel: int = 0) -> Optional[float]:
+def detect_audio_offset(reference_path: str, target_path: str, max_offset_seconds: float = 30.0, sample_rate: int = 8000, mono_channel: int = 0, analysis_window_seconds: float = 600.0) -> Optional[float]:
     """Detect the time offset between two audio files by cross-correlating mono WAV extracts."""
     try:
         import numpy as np
@@ -66,8 +68,8 @@ def detect_audio_offset(reference_path: str, target_path: str, max_offset_second
         ref_wav = os.path.join(tmp_dir, "ref.wav")
         tgt_wav = os.path.join(tmp_dir, "tgt.wav")
 
-        ok_ref = _extract_mono_wav(reference_path, ref_wav, sample_rate)
-        ok_tgt = _extract_mono_wav(target_path,    tgt_wav, sample_rate)
+        ok_ref = _extract_mono_wav(reference_path, ref_wav, sample_rate, analysis_window_seconds)
+        ok_tgt = _extract_mono_wav(target_path,    tgt_wav, sample_rate, analysis_window_seconds)
 
         if not ok_ref or not ok_tgt:
             logger.error("detect_audio_offset: WAV extraction failed")

@@ -6,13 +6,13 @@ from typing import List, Optional
 from .base import BaseStreamingAPI, Entries, Season, Episode
 
 from VibraVid.services._base.site_loader import get_folder_name
-from VibraVid.services.mostraguarda.scrapper import GetSerieInfo
+from VibraVid.services.altadefinizione.scrapper import GetSerieInfo
 
 
-class MostraguardaAPI(BaseStreamingAPI):
+class AltadefinizioneApi(BaseStreamingAPI):
     def __init__(self):
         super().__init__()
-        self.site_name = "mostraguarda"
+        self.site_name = "altadefinizione"
         self._search_fn = None
         self.scrape_serie = None
     
@@ -25,7 +25,7 @@ class MostraguardaAPI(BaseStreamingAPI):
     
     def search(self, query: str) -> List[Entries]:
         """
-        Search for content on Mostraguarda.
+        Search for content on Altadefinizione.
         
         Args:
             query: Search term
@@ -61,7 +61,13 @@ class MostraguardaAPI(BaseStreamingAPI):
 
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
         """
-        Mostraguarda supports only movies, hence no series metadata.
+        Get seasons and episodes for a Altadefinizione series.
+        
+        Args:
+            media_item: Entries to get metadata for
+            
+        Returns:
+            List of Season objects, or None if not a series
         """
         # If media_item is a movie, no seasons
         if media_item.is_movie:
@@ -113,7 +119,7 @@ class MostraguardaAPI(BaseStreamingAPI):
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
         """
-        Start downloading from Mostraguarda.
+        Start downloading from Altadefinizione.
         
         Args:
             media_item: Entries to download

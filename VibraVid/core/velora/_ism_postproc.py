@@ -9,7 +9,10 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from rich.markup import escape
+
 from VibraVid.setup import get_bento4_decrypt_path
+from VibraVid.core.ui.bar_manager import console
 from VibraVid.core.decryptor import Decryptor
 from VibraVid.core.muxing.helper.video import _segment_number
 
@@ -18,6 +21,24 @@ from .util._verify import verify_decrypted_media
 
 
 logger = logging.getLogger("manual")
+
+
+def _iter_boxes(buf, start: int, end: int):
+    """Yield ``(offset, size, type, header_len)`` for each MP4 box in ``buf[start:end]``."""
+    off = start
+    while off + 8 <= end:
+        size = struct.unpack(">I", buf[off:off + 4])[0]
+        typ = bytes(buf[off + 4:off + 8])
+        hdr = 8
+        if size == 1:
+            size = struct.unpack(">Q", buf[off + 8:off + 16])[0]
+            hdr = 16
+        elif size == 0:
+            size = end - off
+        if size < hdr or off + size > end:
+            return
+        yield off, size, typ, hdr
+        off += size
 
 
 class IsmPostprocMixin:
@@ -39,29 +60,13 @@ class IsmPostprocMixin:
         """Return the ``track_ID`` declared in the first fragment's moof>traf>tfhd."""
         buf = memoryview(data)
 
-        def _iter(start: int, end: int):
-            off = start
-            while off + 8 <= end:
-                size = struct.unpack(">I", buf[off:off + 4])[0]
-                typ = bytes(buf[off + 4:off + 8])
-                hdr = 8
-                if size == 1:
-                    size = struct.unpack(">Q", buf[off + 8:off + 16])[0]
-                    hdr = 16
-                elif size == 0:
-                    size = end - off
-                if size < hdr or off + size > end:
-                    return
-                yield off, size, typ, hdr
-                off += size
-
-        for moof_off, moof_size, moof_typ, moof_hdr in _iter(0, len(data)):
+        for moof_off, moof_size, moof_typ, moof_hdr in _iter_boxes(buf, 0, len(data)):
             if moof_typ != b"moof":
                 continue
-            for traf_off, traf_size, traf_typ, traf_hdr in _iter(moof_off + moof_hdr, moof_off + moof_size):
+            for traf_off, traf_size, traf_typ, traf_hdr in _iter_boxes(buf, moof_off + moof_hdr, moof_off + moof_size):
                 if traf_typ != b"traf":
                     continue
-                for tf_off, tf_size, tf_typ, tf_hdr in _iter(traf_off + traf_hdr, traf_off + traf_size):
+                for tf_off, tf_size, tf_typ, tf_hdr in _iter_boxes(buf, traf_off + traf_hdr, traf_off + traf_size):
                     if tf_typ != b"tfhd":
                         continue
                     p = tf_off + tf_hdr  # skip box header; then version/flags (4) + track_ID (4)
@@ -161,29 +166,13 @@ class IsmPostprocMixin:
         """Force ``tfhd.sample_description_index`` to 1 in every fragment."""
         buf = bytearray(data)
 
-        def _iter(start: int, end: int):
-            off = start
-            while off + 8 <= end:
-                size = struct.unpack(">I", buf[off:off + 4])[0]
-                typ = bytes(buf[off + 4:off + 8])
-                hdr = 8
-                if size == 1:
-                    size = struct.unpack(">Q", buf[off + 8:off + 16])[0]
-                    hdr = 16
-                elif size == 0:
-                    size = end - off
-                if size < hdr or off + size > end:
-                    return
-                yield off, size, typ, hdr
-                off += size
-
-        for moof_off, moof_size, moof_typ, moof_hdr in _iter(0, len(buf)):
+        for moof_off, moof_size, moof_typ, moof_hdr in _iter_boxes(buf, 0, len(buf)):
             if moof_typ != b"moof":
                 continue
-            for traf_off, traf_size, traf_typ, traf_hdr in _iter(moof_off + moof_hdr, moof_off + moof_size):
+            for traf_off, traf_size, traf_typ, traf_hdr in _iter_boxes(buf, moof_off + moof_hdr, moof_off + moof_size):
                 if traf_typ != b"traf":
                     continue
-                for tf_off, tf_size, tf_typ, tf_hdr in _iter(traf_off + traf_hdr, traf_off + traf_size):
+                for tf_off, tf_size, tf_typ, tf_hdr in _iter_boxes(buf, traf_off + traf_hdr, traf_off + traf_size):
                     if tf_typ != b"tfhd":
                         continue
                     p = tf_off + tf_hdr
@@ -277,9 +266,15 @@ class IsmPostprocMixin:
             logger.error("ISM post-processing decryption failed")
             return False
 
-        verify_ok, verify_msg = verify_decrypted_media(out_path)
+        verify_ok, verify_msg, still_encrypted = verify_decrypted_media(out_path)
         if not verify_ok:
             logger.error(f"Post-mux verification failed for {out_path.name}: {verify_msg}")
+            if still_encrypted:
+                label = self._decrypt_track_label(stream)
+                short = verify_msg.split(";", 1)[0].strip()
+                console.print(escape(f"[!] Decryption FAILED for {label}: {short};"))
+                with self._decrypt_failures_lock:
+                    self.decrypt_failures.append({"label": label, "track": out_path.name, "message": verify_msg})
             return False
         logger.info(f"Check post-mux OK for{out_path.name}: {verify_msg}")
 

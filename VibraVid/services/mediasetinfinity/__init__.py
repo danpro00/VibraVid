@@ -90,7 +90,8 @@ def _resolve_url_to_item(url: str):
         console.print(f"[cyan]Detected film from URL: [green]{name}")
         return {'id': film_id, 'name': name, 'type': 'film', 'url': url, 'year': year}
 
-    console.print("[red]Could not determine content type (film/series) from URL")
+    # No SE.../F... id in the URL: it is likely a brand/landing (browse) page.
+    # Signalled by returning None; the caller falls back to browse resolution.
     return None
 
 
@@ -145,6 +146,10 @@ def title_search(query: str) -> int:
             item_type = "tv" if is_series else "film"
         except Exception:
             break
+
+        # Skip non-playable catalog/landing cards: these come back as GenericItem
+        if not item.get("guid"):
+            continue
 
         date = item.get("year") or ''
         if not date:

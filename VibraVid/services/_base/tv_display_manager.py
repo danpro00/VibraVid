@@ -483,48 +483,55 @@ def display_episodes_list(episodes_manager) -> str:
     # Set up table for displaying episodes
     table_show_manager = TVShowManager()
 
-    # Check if any episode has non-empty category/duration fields
-    has_category = False
-    has_duration = False
-    
-    for media in episodes_manager:
-        category = media.get('category') if isinstance(media, dict) else getattr(media, 'category', None)
-        duration = media.get('duration') if isinstance(media, dict) else getattr(media, 'duration', None)
-        
-        if category is not None and str(category).strip() != '':
-            has_category = True
-        if duration is not None and str(duration).strip() != '':
-            has_duration = True
+    def _field(media, key):
+        return media.get(key) if isinstance(media, dict) else getattr(media, key, None)
+
+    def _has(key):
+        return any(_field(m, key) is not None and str(_field(m, key)).strip() != '' for m in episodes_manager)
+
+    has_category    = _has('category')
+    has_duration    = _has('duration')
+    has_releasedate = _has('release_date')
+    has_genre       = _has('genre')
 
     # Add columns to the table
     column_info = {
         "Index": {'color': 'red'},
     }
-    
+
     column_info["Name"] = {'color': 'magenta'}
-    
+
     if has_category:
         column_info["Category"] = {'color': 'green'}
-    
+
     if has_duration:
         column_info["Duration"] = {'color': 'blue'}
-    
+
+    if has_releasedate:
+        column_info["Release Date"] = {'color': 'cyan'}
+
+    if has_genre:
+        column_info["Genre"] = {'color': 'green'}
+
     table_show_manager.add_column(column_info)
 
     # Populate the table with episodes information
     for i, media in enumerate(episodes_manager):
-        name = media.get('name') if isinstance(media, dict) else getattr(media, 'name', None)
-        duration = media.get('duration') if isinstance(media, dict) else getattr(media, 'duration', None)
-        category = media.get('category') if isinstance(media, dict) else getattr(media, 'category', None)
         episode_info = {
             'Index': str(i + 1),
-            'Name': name,
+            'Name': _field(media, 'name'),
         }
         if has_category:
-            episode_info['Category'] = category
-        
+            episode_info['Category'] = _field(media, 'category')
+
         if has_duration:
-            episode_info['Duration'] = duration
+            episode_info['Duration'] = _field(media, 'duration')
+
+        if has_releasedate:
+            episode_info['Release Date'] = _field(media, 'release_date')
+
+        if has_genre:
+            episode_info['Genre'] = _field(media, 'genre')
 
         table_show_manager.add_tv_show(episode_info)
 

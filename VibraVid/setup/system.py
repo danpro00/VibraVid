@@ -1,10 +1,24 @@
 # 18.07.25
 
+import os
 import sys
 import threading
 
 from .checker import check_bento4, check_ffmpeg, check_shaka_packager, check_dovi_tool, check_mkvmerge, check_mkvpropedit, check_velora
+from .binary_paths import binary_paths
 from .device_install import check_device_wvd_path, check_device_prd_path
+
+
+def _is_alive(path) -> bool:
+    """Return True if a resolved binary path still points at an existing file."""
+    return bool(path) and os.path.isfile(path)
+
+
+def _drop_cached(*names: str) -> None:
+    """Forget any previously resolved location for the given binaries so the next check_* call re-scans disk"""
+    ext = ".exe" if binary_paths.system == "windows" else ""
+    for name in names:
+        binary_paths.invalidate_binary(f"{name}{ext}")
 
 
 is_binary_installation = getattr(sys, 'frozen', False)
@@ -60,18 +74,30 @@ def get_is_binary_installation() -> bool:
     return is_binary_installation
 
 def get_ffmpeg_path() -> str:
+    global _ffmpeg_path, _ffprobe_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_ffmpeg_path) or not _is_alive(_ffprobe_path):
+        _drop_cached("ffmpeg", "ffprobe")
+        _ffmpeg_path, _ffprobe_path = check_ffmpeg()
     return _ffmpeg_path
 
 def get_ffprobe_path() -> str:
+    global _ffmpeg_path, _ffprobe_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_ffmpeg_path) or not _is_alive(_ffprobe_path):
+        _drop_cached("ffmpeg", "ffprobe")
+        _ffmpeg_path, _ffprobe_path = check_ffmpeg()
     return _ffprobe_path
 
 def get_bento4_decrypt_path() -> str:
+    global _bento4_decrypt_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_bento4_decrypt_path):
+        _drop_cached("mp4decrypt")
+        _bento4_decrypt_path = check_bento4()
     return _bento4_decrypt_path
 
 def get_wvd_path() -> str:
@@ -88,7 +114,8 @@ def get_velora_path() -> str:
     global _velora_path
     if not _initialized:
         _initialize_paths()
-    if _velora_path is None:
+    if not _is_alive(_velora_path):
+        _drop_cached("velora")
         _velora_path = check_velora()
     return _velora_path
 
@@ -97,23 +124,39 @@ def reset_velora_path() -> None:
     _velora_path = None
 
 def get_shaka_packager_path() -> str:
+    global _shaka_packager_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_shaka_packager_path):
+        _drop_cached("packager")
+        _shaka_packager_path = check_shaka_packager()
     return _shaka_packager_path
 
 def get_dovi_tool_path() -> str:
+    global _dovi_tool_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_dovi_tool_path):
+        _drop_cached("dovi_tool")
+        _dovi_tool_path = check_dovi_tool()
     return _dovi_tool_path
 
 def get_mkvmerge_path() -> str:
+    global _mkvmerge_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_mkvmerge_path):
+        _drop_cached("mkvmerge")
+        _mkvmerge_path = check_mkvmerge()
     return _mkvmerge_path
 
 def get_mkvpropedit_path() -> str:
+    global _mkvpropedit_path
     if not _initialized:
         _initialize_paths()
+    if not _is_alive(_mkvpropedit_path):
+        _drop_cached("mkvpropedit")
+        _mkvpropedit_path = check_mkvpropedit()
     return _mkvpropedit_path
 
 def get_info_wvd(cdm_device_path):

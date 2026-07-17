@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from VibraVid.utils import config_manager
 from VibraVid.setup import get_ffmpeg_path
 from VibraVid.core.decryptor import Decryptor
-from VibraVid.core.muxing.helper.video import binary_merge_segments
+from VibraVid.core.muxing.helper.video import binary_merge_segments, normalize_timestamps
 from VibraVid.core.ui.bar_manager import DownloadBarManager
 
 from .util.formatting import format_size as _fmt_size, format_speed as _fmt_speed, estimate_total_size as _estimate_total_size
@@ -47,8 +47,11 @@ def _ffmpeg_concat(part_files: List[Path], out_path: Path) -> bool:
         "-f", "concat", "-safe", "0",
         "-i", str(list_path),
         "-c", "copy",
-        str(out_path),
     ]
+    if out_path.suffix.lower() == ".m4a":
+        cmd += ["-f", "mp4"]
+
+    cmd.append(str(out_path))
     logger.info(f"[multiperiod] ffmpeg concat {len(part_files)} Period file(s) -> {out_path.name}")
     
     try:
@@ -73,7 +76,7 @@ def _ffmpeg_concat(part_files: List[Path], out_path: Path) -> bool:
 
 class MultiPeriodMixin:
     def _download_dash_multiperiod(self, stream, bar_manager: DownloadBarManager, live_decryption: bool = False) -> None:
-        """Per-Period download → merge → decrypt → ffmpeg-concat for multi-period DASH."""
+        """Per-Period download - merge - decrypt - ffmpeg-concat for multi-period DASH."""
         all_headers = self._build_headers()
         stream_dir = self._make_stream_dir(stream, "dash")
         task_key = self._stream_task_key(stream)
@@ -157,7 +160,7 @@ class MultiPeriodMixin:
                 logger.error(f"[multiperiod] Period {order_idx} merge produced empty file")
                 continue
 
-            # Decrypt if keys are available — Decryptor auto-detects and simply
+            # Decrypt if keys are available - Decryptor auto-detects and simply
             # copies clear Periods (e.g. a clear intro), decrypts encrypted ones.
             if decryptor is not None:
                 dec_path = part_merged.with_suffix(".dec.mp4")
@@ -175,7 +178,7 @@ class MultiPeriodMixin:
                         part_merged.unlink(missing_ok=True)
                         dec_path.rename(part_merged)
                     else:
-                        logger.warning(f"[multiperiod] Period {order_idx} decryption failed — keeping raw merge")
+                        logger.warning(f"[multiperiod] Period {order_idx} decryption failed - keeping raw merge")
                         dec_path.unlink(missing_ok=True)
                 except Exception as exc:
                     logger.error(f"[multiperiod] Period {order_idx} decryption error: {exc}")
@@ -183,6 +186,16 @@ class MultiPeriodMixin:
                         dec_path.unlink(missing_ok=True)
                     except Exception:
                         pass
+
+            # Reset absolute fragment timestamps (runs after decryption above)
+            norm_path = normalize_timestamps(part_merged, logger)
+            if norm_path is not None:
+                try:
+                    part_merged.unlink(missing_ok=True)
+                    norm_path.rename(part_merged)
+                except OSError as exc:
+                    logger.error(f"[multiperiod] normalize rename-back failed, keeping un-normalized file: {exc}")
+                    norm_path.unlink(missing_ok=True)
 
             part_files.append(part_merged)
 

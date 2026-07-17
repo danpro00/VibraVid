@@ -71,6 +71,8 @@ class FilterSpec:
     "ita|best,AAC"                          language + codec with fallback to best (audio)
     "res=1080:codecs=hvc1:for=best"         native passthrough
     "id=audio_128k_en:for=best"             id-based (real manifest IDs).
+    "bitrate=1000-8000:for=best"            bitrate range in kbps, best within range (video).
+    "bitrate=-8000:for=best"                bitrate cap (no lower bound), best within range (video).
     """
     drop: bool = False
     select_all: bool = False
@@ -80,6 +82,8 @@ class FilterSpec:
     langs: Optional[str] = None
     codec: Optional[str] = None
     id: Optional[str] = None
+    bitrate_min: Optional[int] = None
+    bitrate_max: Optional[int] = None
     fallback_to_best: bool = False
     select_default: Optional[bool] = None  # None=no filter, True=only default, False=only non-default
     extra: dict = field(default_factory=dict)
@@ -195,6 +199,8 @@ class FilterSpec:
                 self.codec = v
             elif k == "id":
                 self.id = v
+            elif k == "bitrate":
+                self._parse_bitrate_range(v)
             elif k == "for":
                 for_val = v.lower()
             else:
@@ -205,6 +211,24 @@ class FilterSpec:
             self.select_best = True
         elif for_val == "worst":
             self.select_best = False
+
+    def _parse_bitrate_range(self, v: str) -> None:
+        """Parse a bitrate spec in kbps: 'MIN-MAX', '-MAX' (cap only), 'MIN-' (floor
+        only), or a bare 'MAX' (cap only, e.g. "bitrate=8000" = no higher than 8000)."""
+        v = v.strip()
+        m = re.match(r"^(\d*)-(\d*)$", v)
+        if m:
+            lo, hi = m.group(1), m.group(2)
+            self.bitrate_min = int(lo) if lo else None
+            self.bitrate_max = int(hi) if hi else None
+            return
+
+        try:
+            self.bitrate_min = None
+            self.bitrate_max = int(v)
+        except ValueError:
+            self.bitrate_min = None
+            self.bitrate_max = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -422,6 +446,18 @@ def _matches_res(s, res: str) -> bool:
     return h == target or w == target
 
 
+def _matches_bitrate(s, bmin: Optional[int], bmax: Optional[int]) -> bool:
+    """bmin/bmax are kbps; stream.bitrate is bps."""
+    kbps = _bitrate(s) // 1000
+    if not kbps:
+        return False
+    if bmin is not None and kbps < bmin:
+        return False
+    if bmax is not None and kbps > bmax:
+        return False
+    return True
+
+
 def _matches_codec(s, token: str) -> bool:
     """Prefix/substring match; unknown codec treated as matching."""
     if not token:
@@ -635,11 +671,18 @@ class StreamSelector:
     def _select_video(self, streams: list, spec: FilterSpec) -> SelectionResult:
         result = SelectionResult(select_best=spec.select_best, extra=dict(spec.extra))
         videos = [s for s in streams if getattr(s, "type", "") == "video"]
-        logger.debug(f"Video available: {[f'{_height(s)}p/{_codecs(s)}' for s in videos]} | filter: id={spec.id} res={spec.res} codec={spec.codec} all={spec.select_all} drop={spec.drop} default={spec.select_default}")
+        logger.debug(f"Video available: {[f'{_height(s)}p/{_codecs(s)}' for s in videos]} | filter: id={spec.id} res={spec.res} codec={spec.codec} bitrate=[{spec.bitrate_min},{spec.bitrate_max}] all={spec.select_all} drop={spec.drop} default={spec.select_default}")
 
         if spec.drop or not videos:
             result.drop = True
             return result
+
+        if spec.bitrate_min is not None or spec.bitrate_max is not None:
+            pool = [s for s in videos if _matches_bitrate(s, spec.bitrate_min, spec.bitrate_max)]
+            if pool:
+                videos = pool
+            else:
+                logger.info(f"StreamSelector video: bitrate=[{spec.bitrate_min},{spec.bitrate_max}] — no match, ignoring range")
 
         # Handle explicit "default" or "non-default" filter
         if spec.select_default is not None and not spec.res and not spec.codec and not spec.id and not spec.select_all:
@@ -714,11 +757,18 @@ class StreamSelector:
     def _select_audio(self, streams: list, spec: FilterSpec) -> SelectionResult:
         result = SelectionResult(select_best=spec.select_best, extra=dict(spec.extra))
         audios = [s for s in streams if getattr(s, "type", "") == "audio"]
-        logger.debug(f"Audio available: {[f'{_language(s)}({_resolved_language(s)})/{_codecs(s)}' for s in audios]} | filter: id={spec.id} lang={spec.langs} codec={spec.codec} all={spec.select_all} drop={spec.drop} default={spec.select_default}")
+        logger.debug(f"Audio available: {[f'{_language(s)}({_resolved_language(s)})/{_codecs(s)}' for s in audios]} | filter: id={spec.id} lang={spec.langs} codec={spec.codec} bitrate=[{spec.bitrate_min},{spec.bitrate_max}] all={spec.select_all} drop={spec.drop} default={spec.select_default}")
 
         if spec.drop or not audios:
             result.drop = True
             return result
+
+        if spec.bitrate_min is not None or spec.bitrate_max is not None:
+            pool = [s for s in audios if _matches_bitrate(s, spec.bitrate_min, spec.bitrate_max)]
+            if pool:
+                audios = pool
+            else:
+                logger.info(f"StreamSelector audio: bitrate=[{spec.bitrate_min},{spec.bitrate_max}] — no match, ignoring range")
 
         # Handle explicit "default" or "non-default" filter
         if spec.select_default is not None and not spec.langs and not spec.codec and not spec.id and not spec.select_all:

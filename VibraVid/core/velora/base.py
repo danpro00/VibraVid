@@ -21,7 +21,7 @@ from VibraVid.core.ui.tracker import download_tracker
 from VibraVid.core.ui.bar_manager import DownloadBarManager
 from VibraVid.core.ui.ui import build_table
 from VibraVid.core.utils.selector import StreamSelector, StreamSelectorFormatter
-from VibraVid.core.utils.language import resolve_locale, LANGUAGE_MAP
+from VibraVid.core.utils.language import resolve_locale, LANGUAGE_MAP, language_variants, subtitle_flags
 from VibraVid.core.utils.stream_selector_ui import InteractiveStreamSelector
 from VibraVid.core.utils.codec import VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS, SUBTITLE_CODEC_MAP
 from VibraVid.core.velora.subtitle import build_ext_track_label, is_valid_format, ext_from_url, normalize_sub_filename
@@ -311,6 +311,19 @@ class BaseMediaDownloader:
         sel_audio = [s for s in self.streams if s.type == "audio"    and s.selected and not s.is_external]
         sel_subs  = [s for s in self.streams if s.type == "subtitle" and s.selected and not s.is_external]
 
+        # Keep only one subtitle stream per language+flag variant (e.g. "en", "en-forced", "en-sdh", etc.)
+        _seen_sub_variants: Set[str] = set()
+        _unique_subs: List[Stream] = []
+        for s in sel_subs:
+            variant = f"{(s.resolved_language or s.language or 'und').lower()}{self._sub_discriminator(s)}"
+            if variant in _seen_sub_variants:
+                s.selected = False
+                logger.info(f"Subtitle dedup: variant '{variant}' already kept — dropping duplicate format={getattr(s, 'format', '') or '?'} id={getattr(s, 'id', '')}")
+                continue
+            _seen_sub_variants.add(variant)
+            _unique_subs.append(s)
+        sel_subs = _unique_subs
+
         self._has_video = bool(sel_video)
         if sel_video:
             v = sel_video[0]
@@ -377,9 +390,8 @@ class BaseMediaDownloader:
         for s in sel_subs:
             label = self._sub_stream_label(s)
             raw = (s.language or "und").lower()
-
-            # task_key mirrors _stream_task_key() in downloader.py
-            task_lang = raw.split("-")[0]
+            key_lang = (s.resolved_language or s.language or "und").lower()
+            task_lang = key_lang.split("-")[0]
             task_key  = f"sub_{task_lang}{self._sub_discriminator(s)}"
 
             name = (s.name or "").strip()
@@ -557,6 +569,14 @@ class BaseMediaDownloader:
             if not f.is_file():
                 continue
 
+            # Orphaned artifact from an interrupted normalize_timestamps() pass
+            # (e.g. process killed between writing "<name>.norm.<ext>" and the
+            # rename-back). Never a real track -- skip so it can't masquerade
+            # as a bogus extra audio/video track.
+            if ".norm." in f.name.lower():
+                logger.warning(f"Skipping stray normalize artifact in output dir: {f.name}")
+                continue
+
             ext = f.suffix.lower()
             fname_l = self.filename.lower()
 
@@ -571,7 +591,10 @@ class BaseMediaDownloader:
                 if status["video"] and Path(status["video"]["path"]).name == f.name:
                     continue
                 track_name = f.stem[len(self.filename):].lstrip(".")
-                status["audios"].append({"path": str(f), "name": track_name, "size": f.stat().st_size})
+                status["audios"].append({
+                    "path": str(f), "name": track_name, "size": f.stat().st_size,
+                    **language_variants(track_name),
+                })
                 continue
 
             stem_lower = f.stem.lower()   # e.g. "filename.en"
@@ -587,6 +610,8 @@ class BaseMediaDownloader:
                     "type":        "wvtt",
                     "size":        f.stat().st_size,
                     "is_wvtt_mp4": True,
+                    **subtitle_flags(lang_part),
+                    **language_variants(lang_part),
                 })
                 continue
 
@@ -601,6 +626,8 @@ class BaseMediaDownloader:
                     "name":     lang_part,
                     "type":     fmt,
                     "size":     f.stat().st_size,
+                    **subtitle_flags(lang_part),
+                    **language_variants(lang_part),
                 })
                 continue
 

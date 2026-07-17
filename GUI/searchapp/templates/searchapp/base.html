@@ -8,6 +8,13 @@
 		<link rel="icon" type="image/png" href="https://avatars.githubusercontent.com/u/249468050?s=200&v=4" />
 		<link rel="shortcut icon" type="image/png" href="https://avatars.githubusercontent.com/u/249468050?s=200&v=4" />
 		<link rel="apple-touch-icon" href="https://avatars.githubusercontent.com/u/249468050?s=200&v=4" />
+
+		<link rel="stylesheet" href="{% static 'searchapp/themes/default.css' %}" />
+		<link rel="stylesheet" href="{% static 'searchapp/themes/default-light.css' %}" />
+		<link rel="stylesheet" href="{% static 'searchapp/themes/abyss.css' %}" />
+		<link rel="stylesheet" href="{% static 'searchapp/themes/abyss-ocean.css' %}" />
+		<script src="{% static 'searchapp/themes/theme.js' %}"></script>
+
 		<script src="https://cdn.tailwindcss.com"></script>
 		<script>
 			tailwind.config = {
@@ -83,21 +90,14 @@
 				height: 8px;
 			}
 			::-webkit-scrollbar-track {
-				background: var(--scrollbar-track);
+				background: var(--vv-scrollbar-track);
 			}
 			::-webkit-scrollbar-thumb {
-				background: var(--scrollbar-thumb);
+				background: var(--vv-scrollbar-thumb);
 				border-radius: 4px;
 			}
 			::-webkit-scrollbar-thumb:hover {
-				background: var(--scrollbar-thumb-hover);
-			}
-
-			/* Dark theme scrollbar */
-			.dark {
-				--scrollbar-track: #0a0a0a;
-				--scrollbar-thumb: #333;
-				--scrollbar-thumb-hover: #555;
+				background: var(--vv-scrollbar-thumb-hover);
 			}
 
 			/* Card hover effect */
@@ -126,13 +126,112 @@
 				opacity: 0;
 			}
 		</style>
+
+		<style>
+			/* Solid surfaces */
+			:root:not([data-theme="default"]) [class~="bg-black"] { background-color: var(--vv-surf-0); }
+			:root:not([data-theme="default"]) [class~="bg-zinc-900"],
+			:root:not([data-theme="default"]) [class~="bg-gray-900"] { background-color: var(--vv-surf-1); }
+			:root:not([data-theme="default"]) [class~="bg-gray-800"] { background-color: var(--vv-surf-2); }
+			:root:not([data-theme="default"]) [class~="bg-gray-700"] { background-color: var(--vv-surf-3); }
+			:root:not([data-theme="default"]) [class~="bg-gray-600"] { background-color: var(--vv-surf-4); }
+			:root:not([data-theme="default"]) [class~="bg-gray-500"] { background-color: var(--vv-surf-5); }
+			:root:not([data-theme="default"]) [class~="bg-white"] { background-color: var(--vv-surf-white); }
+			:root:not([data-theme="default"]) [class~="bg-gray-200"] { background-color: var(--vv-surf-chip); }
+
+			/* Scrims: bg-black/NN */
+			:root:not([data-theme="default"]) [class~="bg-black/30"] { background-color: rgb(var(--vv-scrim-rgb) / 0.30); }
+			:root:not([data-theme="default"]) [class~="bg-black/40"] { background-color: rgb(var(--vv-scrim-rgb) / 0.40); }
+			:root:not([data-theme="default"]) [class~="bg-black/50"] { background-color: rgb(var(--vv-scrim-rgb) / 0.50); }
+			:root:not([data-theme="default"]) [class~="bg-black/60"] { background-color: rgb(var(--vv-scrim-rgb) / 0.60); }
+			:root:not([data-theme="default"]) [class~="bg-black/80"] { background-color: rgb(var(--vv-scrim-rgb) / 0.80); }
+
+			/* Translucent gray surfaces */
+			:root:not([data-theme="default"]) [class~="bg-gray-900/50"] { background-color: rgb(var(--vv-surf-1-rgb) / 0.50); }
+			:root:not([data-theme="default"]) [class~="bg-gray-900/60"] { background-color: rgb(var(--vv-surf-1-rgb) / 0.60); }
+			:root:not([data-theme="default"]) [class~="bg-gray-800/50"] { background-color: rgb(var(--vv-surf-2-rgb) / 0.50); }
+			:root:not([data-theme="default"]) [class~="bg-gray-800/60"] { background-color: rgb(var(--vv-surf-2-rgb) / 0.60); }
+			:root:not([data-theme="default"]) [class~="bg-gray-700/50"] { background-color: rgb(var(--vv-surf-3-rgb) / 0.50); }
+			:root:not([data-theme="default"]) [class~="bg-gray-700/70"] { background-color: rgb(var(--vv-surf-3-rgb) / 0.70); }
+			:root:not([data-theme="default"]) [class~="bg-gray-500/10"] { background-color: rgb(var(--vv-surf-5-rgb) / 0.10); }
+
+			/* Subtle overlays: bg-white/NN */
+			:root:not([data-theme="default"]) [class~="bg-white/5"] { background-color: rgb(var(--vv-overlay-rgb) / 0.05); }
+			:root:not([data-theme="default"]) [class~="bg-white/10"] { background-color: rgb(var(--vv-overlay-rgb) / 0.10); }
+			:root:not([data-theme="default"]) [class~="bg-white/15"] { background-color: rgb(var(--vv-overlay-rgb) / 0.15); }
+			:root:not([data-theme="default"]) [class~="bg-white/20"] { background-color: rgb(var(--vv-overlay-rgb) / 0.20); }
+
+			/* Text — text-white flips to theme text, but NOT on accent-colored
+			   elements (buttons/badges), where white must stay white. */
+			:root:not([data-theme="default"]) [class~="text-white"]:not([class*="bg-red"]):not([class*="bg-green"]):not([class*="bg-blue"]):not([class*="bg-emerald"]):not([class*="bg-orange"]):not([class*="bg-amber"]):not([class*="bg-indigo"]):not([class*="bg-purple"]):not([class*="bg-gradient"]) { color: var(--vv-text-primary); }
+			:root:not([data-theme="default"]) [class~="text-gray-200"],
+			:root:not([data-theme="default"]) [class~="text-gray-300"] { color: var(--vv-text-secondary); }
+			:root:not([data-theme="default"]) [class~="text-gray-400"],
+			:root:not([data-theme="default"]) [class~="text-gray-500"] { color: var(--vv-text-muted); }
+			:root:not([data-theme="default"]) [class~="text-gray-600"],
+			:root:not([data-theme="default"]) [class~="text-gray-700"] { color: var(--vv-text-faint); }
+
+			/* Borders */
+			:root:not([data-theme="default"]) [class~="border-gray-800"] { border-color: var(--vv-border-1); }
+			:root:not([data-theme="default"]) [class~="border-gray-700"],
+			:root:not([data-theme="default"]) [class~="border-gray-600"] { border-color: var(--vv-border-2); }
+			:root:not([data-theme="default"]) [class~="border-white/10"] { border-color: rgb(var(--vv-overlay-rgb) / 0.10); }
+			:root:not([data-theme="default"]) [class~="border-white/20"] { border-color: rgb(var(--vv-overlay-rgb) / 0.20); }
+			:root:not([data-theme="default"]) [class~="divide-gray-800"] > * + * { border-color: var(--vv-border-1); }
+
+			/* Gradients (from/to gray-900/800) */
+			:root:not([data-theme="default"]) [class~="from-gray-900"] {
+				--tw-gradient-from: var(--vv-grad-from) var(--tw-gradient-from-position, 0%);
+				--tw-gradient-to: rgb(var(--vv-surf-1-rgb) / 0) var(--tw-gradient-to-position, 100%);
+				--tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+			}
+			:root:not([data-theme="default"]) [class~="to-gray-900"] { --tw-gradient-to: var(--vv-grad-to) var(--tw-gradient-to-position, 100%); }
+			:root:not([data-theme="default"]) [class~="to-gray-800"] { --tw-gradient-to: var(--vv-surf-2) var(--tw-gradient-to-position, 100%); }
+
+			/* Gradient opacity variants (translucent panel cards) */
+			:root:not([data-theme="default"]) [class~="from-gray-900/80"] {
+				--tw-gradient-from: rgb(var(--vv-surf-1-rgb) / 0.80) var(--tw-gradient-from-position, 0%);
+				--tw-gradient-to: rgb(var(--vv-surf-1-rgb) / 0) var(--tw-gradient-to-position, 100%);
+				--tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+			}
+			:root:not([data-theme="default"]) [class~="from-gray-900/60"] {
+				--tw-gradient-from: rgb(var(--vv-surf-1-rgb) / 0.60) var(--tw-gradient-from-position, 0%);
+				--tw-gradient-to: rgb(var(--vv-surf-1-rgb) / 0) var(--tw-gradient-to-position, 100%);
+				--tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+			}
+			:root:not([data-theme="default"]) [class~="to-gray-900/40"] { --tw-gradient-to: rgb(var(--vv-surf-1-rgb) / 0.40) var(--tw-gradient-to-position, 100%); }
+			:root:not([data-theme="default"]) [class~="to-gray-900/20"] { --tw-gradient-to: rgb(var(--vv-surf-1-rgb) / 0.20) var(--tw-gradient-to-position, 100%); }
+
+			/* Glass themes (Abyss): translucent cards get a backdrop blur so they read as frosted glass. */
+			:root[data-theme="abyss"] [class~="bg-gray-900"],
+			:root[data-theme="abyss"] [class~="bg-zinc-900"],
+			:root[data-theme="abyss"] [class~="bg-gray-800"],
+			:root[data-theme="abyss"] [class~="bg-gray-900/60"],
+			:root[data-theme="abyss"] [class~="bg-gray-900/50"],
+			:root[data-theme="abyss-ocean"] [class~="bg-gray-900"],
+			:root[data-theme="abyss-ocean"] [class~="bg-zinc-900"],
+			:root[data-theme="abyss-ocean"] [class~="bg-gray-800"],
+			:root[data-theme="abyss-ocean"] [class~="bg-gray-900/60"],
+			:root[data-theme="abyss-ocean"] [class~="bg-gray-900/50"] {
+				backdrop-filter: blur(var(--vv-card-blur));
+				-webkit-backdrop-filter: blur(var(--vv-card-blur));
+			}
+		</style>
 		{% block extra_head %}{% endblock %}
 	</head>
 
-	<body class="bg-black text-white">
+	<body
+		class="transition-colors duration-300"
+		style="background-color: var(--vv-bg-page); color: var(--vv-text-primary);"
+	>
 		<!-- Top Navigation -->
 		<nav
-			class="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-md transition-all duration-300"
+			class="fixed top-0 left-0 right-0 z-50 transition-all duration-300"
+			style="
+				background-color: var(--vv-nav-bg);
+				backdrop-filter: blur(var(--vv-nav-blur));
+				-webkit-backdrop-filter: blur(var(--vv-nav-blur));
+			"
 			id="navbar"
 		>
 			<div
@@ -145,10 +244,11 @@
 				>
 					<div class="flex flex-col">
 						<span
-							class="text-xl font-black text-white tracking-tighter uppercase"
+							class="text-xl font-black tracking-tighter uppercase"
+							style="color: var(--vv-text-primary);"
 							>ARRO<span class="text-red-600">WAR</span></span
 						>
-						<span class="text-xs text-gray-400"
+						<span class="text-xs" style="color: var(--vv-text-muted);"
 							>v{{ app_version }}</span
 						>
 					</div>
@@ -157,7 +257,7 @@
 				<!-- Hamburger Button (mobile) -->
 				<button
 					id="hamburger-btn"
-					class="lg:hidden p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+					class="lg:hidden p-2 rounded-lg transition-colors text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)]"
 					onclick="toggleMobileMenu()"
 					aria-label="Menu"
 				>
@@ -195,7 +295,7 @@
 				<div class="hidden lg:flex items-center gap-8">
 					<a
 						href="{% url 'download_dashboard' %}"
-						class="text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2"
+						class="text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] transition-colors flex items-center gap-2"
 					>
 						<svg
 							class="w-4 h-4"
@@ -234,7 +334,7 @@
 					{% if show_arr_stack_nav %}
 					<a
 						href="{% url 'arr_stack' %}"
-						class="text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2"
+						class="text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] transition-colors flex items-center gap-2"
 					>
 						<svg
 							class="w-4 h-4"
@@ -249,12 +349,12 @@
 								d="M5 8h14M5 12h14M5 16h10"
 							></path>
 						</svg>
-						Coda ARR
+						ARR Queue
 					</a>
 					{% endif %}
 					<a
 						href="{% url 'settings_editor' %}"
-						class="text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2"
+						class="text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] transition-colors flex items-center gap-2"
 					>
 						<svg
 							class="w-4 h-4"
@@ -275,23 +375,7 @@
 								d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
 							></path>
 						</svg>
-						Impostazioni
-					</a>
-					<a
-						href="https://github.com/AstraeLabs/VibraVid"
-						target="_blank"
-						class="text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2"
-					>
-						<svg
-							class="w-4 h-4"
-							fill="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
-							/>
-						</svg>
-						GitHub
+						Settings
 					</a>
 					<a
 						href="https://ko-fi.com/arrowar"
@@ -309,18 +393,63 @@
 						</svg>
 						Donations
 					</a>
+
+					<!-- Theme switcher -->
+					<div class="relative" id="theme-switcher">
+						<button
+							id="theme-switcher-btn"
+							type="button"
+							class="text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] transition-colors flex items-center gap-2"
+							aria-haspopup="true"
+							aria-expanded="false"
+							onclick="toggleThemeMenu()"
+						>
+							<svg
+								class="w-4 h-4"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-4l-4 4v-4H7z"
+								></path>
+								<circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" />
+								<circle cx="12" cy="10" r="1" fill="currentColor" stroke="none" />
+								<circle cx="15" cy="10" r="1" fill="currentColor" stroke="none" />
+							</svg>
+							Theme
+						</button>
+						<div
+							id="theme-switcher-menu"
+							class="hidden absolute right-0 mt-3 w-56 rounded-lg border overflow-hidden shadow-2xl z-50"
+							style="
+								background-color: var(--vv-nav-bg-mobile);
+								border-color: var(--vv-border);
+								backdrop-filter: blur(var(--vv-nav-blur));
+								-webkit-backdrop-filter: blur(var(--vv-nav-blur));
+							"
+						></div>
+					</div>
 				</div>
 			</div>
 
 			<!-- Mobile Menu -->
 			<div
 				id="mobile-menu"
-				class="lg:hidden hidden border-t border-gray-800 bg-black/95 backdrop-blur-md"
+				class="lg:hidden hidden border-t border-[var(--vv-border)]"
+				style="
+					background-color: var(--vv-nav-bg-mobile);
+					backdrop-filter: blur(var(--vv-nav-blur));
+					-webkit-backdrop-filter: blur(var(--vv-nav-blur));
+				"
 			>
 				<div class="px-4 py-4 space-y-1">
 					<a
 						href="{% url 'search_home' %}"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -335,11 +464,11 @@
 								d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
 							></path>
 						</svg>
-						Cerca
+						Search
 					</a>
 					<a
 						href="{% url 'download_dashboard' %}"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -358,7 +487,7 @@
 					</a>
 					<a
 						href="{% url 'watchlist' %}"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -378,7 +507,7 @@
 					{% if show_arr_stack_nav %}
 					<a
 						href="{% url 'arr_stack' %}"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -393,12 +522,12 @@
 								d="M5 8h14M5 12h14M5 16h10"
 							></path>
 						</svg>
-						Coda ARR
+						ARR Queue
 					</a>
 					{% endif %}
 					<a
 						href="{% url 'settings_editor' %}"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -419,29 +548,13 @@
 								d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
 							></path>
 						</svg>
-						Impostazioni
+						Settings
 					</a>
-					<div class="border-t border-gray-800 my-2"></div>
-					<a
-						href="https://github.com/AstraeLabs/VibraVid"
-						target="_blank"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-					>
-						<svg
-							class="w-5 h-5"
-							fill="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
-							/>
-						</svg>
-						GitHub
-					</a>
+					<div class="border-t border-[var(--vv-border)] my-2"></div>
 					<a
 						href="https://ko-fi.com/arrowar"
 						target="_blank"
-						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors"
+						class="flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-500 hover:text-red-400 hover:bg-[var(--vv-hover-bg)] rounded-lg transition-colors"
 					>
 						<svg
 							class="w-5 h-5"
@@ -454,6 +567,13 @@
 						</svg>
 						Donations
 					</a>
+
+					<div class="border-t border-[var(--vv-border)] my-2"></div>
+
+					<div class="px-4 py-2 text-xs font-semibold uppercase tracking-wider" style="color: var(--vv-text-muted);">
+						Theme
+					</div>
+					<div id="theme-switcher-mobile" class="space-y-1"></div>
 				</div>
 			</div>
 		</nav>
@@ -610,15 +730,81 @@
 				}
 			});
 
-			// Navbar scroll effect
+			// Navbar scroll effect (background opacity comes from the active theme)
 			window.addEventListener("scroll", () => {
 				const nav = document.getElementById("navbar");
-				if (window.scrollY > 20) {
-					nav.classList.replace("bg-black/50", "bg-black/95");
-				} else {
-					nav.classList.replace("bg-black/95", "bg-black/50");
-				}
+				nav.style.backgroundColor =
+					window.scrollY > 20
+						? "var(--vv-nav-bg-scrolled)"
+						: "var(--vv-nav-bg)";
 			});
+
+			// Theme switcher (desktop dropdown + mobile list), built from
+			// window.VibraVidTheme.THEMES so the theme registry stays single-source.
+			(function () {
+				const desktopMenu = document.getElementById("theme-switcher-menu");
+				const mobileList = document.getElementById("theme-switcher-mobile");
+				const toggleBtn = document.getElementById("theme-switcher-btn");
+				if (!window.VibraVidTheme || !desktopMenu || !mobileList || !toggleBtn) return;
+
+				const CHECK_SVG =
+					'<svg class="theme-check w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
+
+				function optionHTML(theme, variant) {
+					const base =
+						variant === "mobile"
+							? "flex items-center justify-between gap-3 w-full text-left px-4 py-3 text-sm font-medium rounded-lg transition-colors"
+							: "flex items-center justify-between gap-3 w-full text-left px-4 py-3 text-sm transition-colors";
+					return (
+						'<button type="button" class="theme-option ' +
+						base +
+						' text-[var(--vv-text-secondary)] hover:text-[var(--vv-text-primary)] hover:bg-[var(--vv-hover-bg)]" data-theme-id="' +
+						theme.id +
+						'"><span>' +
+						theme.label +
+						"</span>" +
+						CHECK_SVG +
+						"</button>"
+					);
+				}
+
+				window.VibraVidTheme.THEMES.forEach(function (theme) {
+					desktopMenu.insertAdjacentHTML("beforeend", optionHTML(theme, "desktop"));
+					mobileList.insertAdjacentHTML("beforeend", optionHTML(theme, "mobile"));
+				});
+
+				function refreshChecks() {
+					const current = window.VibraVidTheme.current();
+					document.querySelectorAll(".theme-option").forEach(function (btn) {
+						const check = btn.querySelector(".theme-check");
+						const active = btn.dataset.themeId === current;
+						check.classList.toggle("hidden", !active);
+						btn.style.color = active ? "var(--vv-text-primary)" : "";
+					});
+				}
+
+				document.addEventListener("click", function (e) {
+					const option = e.target.closest(".theme-option");
+					if (option) {
+						window.VibraVidTheme.apply(option.dataset.themeId);
+						refreshChecks();
+						desktopMenu.classList.add("hidden");
+						toggleBtn.setAttribute("aria-expanded", "false");
+						return;
+					}
+					if (!e.target.closest("#theme-switcher")) {
+						desktopMenu.classList.add("hidden");
+						toggleBtn.setAttribute("aria-expanded", "false");
+					}
+				});
+
+				window.toggleThemeMenu = function () {
+					const isHidden = desktopMenu.classList.toggle("hidden");
+					toggleBtn.setAttribute("aria-expanded", String(!isHidden));
+				};
+
+				refreshChecks();
+			})();
 		</script>
 
 		{% block extra_scripts %}{% endblock %}

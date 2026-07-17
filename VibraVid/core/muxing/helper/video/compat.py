@@ -8,6 +8,7 @@ import logging
 from rich.console import Console
 
 from VibraVid.setup import get_ffprobe_path
+from VibraVid.core.muxing.helper._ffprobe_cache import ffprobe_cached
 
 
 console = Console()
@@ -47,6 +48,7 @@ _CODEC_CONTAINER_COMPAT = {
 _PREFERRED_ORDER = ['mkv', 'mp4', 'ts', 'avi', 'webm']
 
 
+@ffprobe_cached
 def get_stream_codecs(file_path: str) -> list[dict]:
     """
     Returns a list of stream info dicts (codec_name, codec_type) for the given file.

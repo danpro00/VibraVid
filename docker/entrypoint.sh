@@ -22,6 +22,10 @@ if [ -n "$PUID" ] || [ -n "$PGID" ]; then
     chown -R appuser:appuser /app/Video /app/Conf /app/data /app/logs /app/.cache 2>/dev/null || true
 fi
 
+# Create a logs cache directory for the appuser to write to, if it doesn't exist.
+mkdir -p /app/.cache/logs
+chown appuser:appuser /app/.cache /app/.cache/logs 2>/dev/null || true
+
 # ── 2. First-run Conf seeding ─────────────────────────────────────────────────
 # If the Conf volume is empty (first start), seed it from the defaults baked
 # into the image at build time. Existing volumes are never touched.

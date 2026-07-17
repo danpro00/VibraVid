@@ -312,8 +312,8 @@ class LiveDownloadMixin:
                     seg_index += 1
 
                 _batch_avg_dur = sum(s.get("duration", 0.0) for s in dl_batch) / max(len(dl_batch), 1)
-                _segs_before = seg_done
-                _bytes_before = total_bytes
+                _segs_before    = seg_done
+                _bytes_before   = total_bytes
                 _elapsed_before = elapsed_dur
 
                 def _batch_progress_cb(done, total_, cur_bytes, speed_bps, speed_label=None):
@@ -380,6 +380,12 @@ class LiveDownloadMixin:
         logger.info(f"Live HLS binary merge | segs={len(all_paths)} | {_fmt_size(merge_size)} -> {out_path.name}")
         _emit_merge_progress(bar_manager, task_key, seg_done, merge_size)
         binary_merge_segments(all_paths, out_path, merge_logger=logger)
+
+        # Reset absolute fragment timestamps (e.g. the huge PCR/PTS base offset
+        # left by 'startover'/live HLS archives). Without this the merged file
+        # keeps an absurd absolute start time that corrupts its duration.
+        if out_path.suffix.lower() in (".mp4", ".m4s", ".m4a", ".ts"):
+            _reset_live_timestamps(out_path)
 
         if not (out_path.exists() and out_path.stat().st_size > 0):
             logger.error(f"Live HLS binary merge produced an empty file: {out_path}")
@@ -759,10 +765,11 @@ class LiveDownloadMixin:
         _emit_merge_progress(bar_manager, task_key, seg_done, merge_size)
         binary_merge_segments(all_paths, out_path, merge_logger=logger)
 
-        if out_path.exists() and out_path.stat().st_size > 0:
-            # Live fMP4 carries epoch-based timestamps — normalise to start at 0
-            # so duration probes and the downstream mux behave sanely.
+        # Reset absolute fragment timestamps (e.g. the huge PCR/PTS base offset
+        # left by 'startover'/live HLS archives). Without this the merged file
+        # keeps an absurd absolute start time that corrupts its duration.
+        if out_path.suffix.lower() in (".mp4", ".m4s", ".m4a", ".ts"):
             _reset_live_timestamps(out_path)
-            logger.info(f"Live DASH merge complete | segs={len(all_paths)} -> {out_path.name} ({_fmt_size(out_path.stat().st_size)})")
-        else:
+
+        if not (out_path.exists() and out_path.stat().st_size > 0):
             logger.error(f"Live DASH binary merge produced an empty file: {out_path}")

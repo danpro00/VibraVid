@@ -1,6 +1,7 @@
 # 3.12.23
 
 import os
+import logging
 
 from rich.console import Console
 from rich.prompt import Prompt
@@ -20,6 +21,7 @@ from .scrapper import GetSerieInfo
 
 console = Console()
 msg = Prompt()
+logger = logging.getLogger(__name__)
 extension_output = config_manager.config.get("PROCESS", "extension")
 
 
@@ -29,24 +31,31 @@ def download_film(select_title: Entries) -> str:
     """
     start_message()
 
-    if config_manager.config.get_bool('DEFAULT', 'skip_ts_versions'):
+    scraper = None
+    if config_manager.config.get_bool('DEFAULT', 'skip_ts_versions') or tmdb_client.api_key is not None:
         scraper = GetSerieInfo(
             f"{site_constants.FULL_URL}/{select_title.provider_language}",
             media_id=select_title.id,
             series_name=select_title.slug
         )
-        
-        if scraper.is_cam():
-            console.print(f"[yellow][SKIP] Download aborted: TS/CAM version detected for '{select_title.name}'")
-            return None
+
+    if config_manager.config.get_bool('DEFAULT', 'skip_ts_versions') and scraper is not None and scraper.is_cam():
+        console.print(f"[yellow][SKIP] Download aborted: TS/CAM version detected for '{select_title.name}'")
+        return None
 
     console.print(f"\n[yellow]Download: [red]{site_constants.SITE_NAME} -> [cyan]{select_title.name} \n")
 
     tmdb_data = None
     if tmdb_client.api_key is not None:
-        result = tmdb_client.get_type_and_id_by_slug_year(select_title.slug, select_title.year, "movie", select_title.provider_language)
-        if result and result.get('id') and result.get('type') == 'movie':
-            tmdb_data = {'id': result.get('id')}
+        site_tmdb_id = scraper.get_tmdb_id() if scraper is not None else None
+
+        if site_tmdb_id:
+            logger.info(f"Using provider-supplied TMDB id {site_tmdb_id} for '{select_title.name}'")
+            tmdb_data = {'id': site_tmdb_id}
+        else:
+            result = tmdb_client.get_type_and_id_by_slug_year(select_title.slug, select_title.year, "movie", select_title.provider_language)
+            if result and result.get('id') and result.get('type') == 'movie':
+                tmdb_data = {'id': result.get('id')}
 
     # Init class
     video_source = VideoSource(f"{site_constants.FULL_URL}/{select_title.provider_language}", False, select_title.id, tmdb_data=tmdb_data)
@@ -84,17 +93,30 @@ def download_episode(obj_episode, index_season_selected, index_episode_selected,
     episode_name = f"{filename}.{extension_output}"
 
     if tmdb_client.api_key is not None:
-        series_slug = scrape_serie.series_name.lower().replace(' ', '-').replace("'", '')
-        result = tmdb_client.get_type_and_id_by_slug_year(str(series_slug), int(scrape_serie.year), 'tv', scrape_serie.provider_language)
-        
-        if result and result.get('id') and result.get('type') == 'tv':
-            tmdb_id = result.get('id')
-            video_source.tmdb_id = tmdb_id
+        site_tmdb_id = None
+        try:
+            site_tmdb_id = scrape_serie.get_tmdb_id()
+        except Exception:
+            site_tmdb_id = None
+
+        if site_tmdb_id:
+            logger.info(f"Using provider-supplied TMDB id {site_tmdb_id} for '{series_display}'")
+            video_source.tmdb_id = site_tmdb_id
             video_source.season_number = index_season_selected
             video_source.episode_number = index_episode_selected
 
         else:
-            video_source.get_iframe(obj_episode.id)
+            series_slug = scrape_serie.series_name.lower().replace(' ', '-').replace("'", '')
+            result = tmdb_client.get_type_and_id_by_slug_year(str(series_slug), int(scrape_serie.year), 'tv', scrape_serie.provider_language)
+
+            if result and result.get('id') and result.get('type') == 'tv':
+                tmdb_id = result.get('id')
+                video_source.tmdb_id = tmdb_id
+                video_source.season_number = index_season_selected
+                video_source.episode_number = index_episode_selected
+
+            else:
+                video_source.get_iframe(obj_episode.id)
 
     else:
         video_source.get_iframe(obj_episode.id)

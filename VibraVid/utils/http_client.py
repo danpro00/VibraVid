@@ -52,6 +52,42 @@ def _get_verify() -> bool:
         return True
 
 
+def _ca_bundle_path() -> Optional[str]:
+    """Resolve an explicit CA bundle for curl_cffi to verify against."""
+    for env in ("CURL_CA_BUNDLE", "SSL_CERT_FILE"):
+        p = os.environ.get(env)
+        if p and os.path.isfile(p):
+            return p
+    try:
+        import certifi
+        path = certifi.where()
+        if path and os.path.isfile(path):
+            return path
+    except Exception:
+        pass
+
+    for path in (
+        "/etc/ssl/certs/ca-certificates.crt",       # Debian/Ubuntu (container)
+        "/etc/pki/tls/certs/ca-bundle.crt",         # RHEL/CentOS/Fedora
+        "/etc/ssl/ca-bundle.pem",                   # OpenSUSE
+        "/etc/ssl/cert.pem",                        # Alpine/macOS
+    ):
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _resolve_verify(verify: Optional[Union[bool, str]]) -> Union[bool, str]:
+    """Normalize the requested verify setting into a value curl_cffi accepts."""
+    if verify is None:
+        verify = _get_verify()
+    if verify is False:
+        return False
+    if isinstance(verify, str):
+        return verify
+    return _ca_bundle_path() or True
+
+
 def _raw_proxies() -> Optional[Dict[str, str]]:
     if not _use_proxy():
         return None
@@ -123,13 +159,17 @@ def create_client(
 ) -> requests.Session:
     """Factory for a configured curl_cffi session."""
     session = requests.Session()
-    session.headers.update(_default_headers(headers))
+    if browser:
+        if headers:
+            session.headers.update(headers)
+    else:
+        session.headers.update(_default_headers(headers))
 
     if cookies:
         session.cookies.update(cookies)
 
     session.timeout = timeout if timeout is not None else _get_timeout()
-    session.verify = _get_verify() if verify is None else verify
+    session.verify = _resolve_verify(verify)
 
     proxy_value = proxies if proxies is not None else _get_proxies()
     if proxy_value:
@@ -262,13 +302,17 @@ async def create_async_client(
 ):
     """Context-manager factory for an async-compatible curl_cffi session wrapper."""
     session = requests.Session()
-    session.headers.update(_default_headers(headers))
+    if browser:
+        if headers:
+            session.headers.update(headers)
+    else:
+        session.headers.update(_default_headers(headers))
 
     if cookies:
         session.cookies.update(cookies)
 
     session.timeout = timeout if timeout is not None else _get_timeout()
-    session.verify = _get_verify() if verify is None else verify
+    session.verify = _resolve_verify(verify)
 
     proxy_value = proxies if proxies is not None else _get_proxies()
     if proxy_value:

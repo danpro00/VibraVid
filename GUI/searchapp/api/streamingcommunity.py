@@ -32,15 +32,7 @@ class StreamingCommunityAPI(BaseStreamingAPI):
         return self._search_fn
     
     def search(self, query: str) -> List[Entries]:
-        """
-        Search for content on StreamingCommunity.
-        
-        Args:
-            query: Search term
-            
-        Returns:
-            List of Entries objects
-        """
+        """Search for content on StreamingCommunity."""
         search_fn = self._get_search_fn()
         database = search_fn(query, get_onlyDatabase=True)
         
@@ -79,15 +71,8 @@ class StreamingCommunityAPI(BaseStreamingAPI):
         return deduped
 
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        """
-        Get seasons and episodes for a StreamingCommunity series.
-        
-        Args:
-            media_item: Entries to get metadata for
-            
-        Returns:
-            List of Season objects, or None if not a series
-        """
+        """Get seasons and episodes for a StreamingCommunity series."""
+
         # Check if it's a movie
         if media_item.is_movie:
             return None
@@ -141,17 +126,7 @@ class StreamingCommunityAPI(BaseStreamingAPI):
         return seasons if seasons else None
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        """
-        Start downloading from StreamingCommunity.
-        
-        Args:
-            media_item: Entries to download
-            season: Season number (for series)
-            episodes: Episode selection
-            
-        Returns:
-            True if download started successfully
-        """
+        """Start downloading from StreamingCommunity."""
         search_fn = self._get_search_fn()
         
         # Prepare selections

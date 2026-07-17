@@ -20,6 +20,7 @@ from VibraVid.core.velora.util._stream_helpers import join_interruptible
 from VibraVid.core.decryptor.keys_manager import KeysManager
 from VibraVid.core.utils.selector import StreamSelector, StreamSelectorFormatter
 from VibraVid.core.utils.codec import DV_CODEC_PREFIXES
+from VibraVid.core.utils.language import language_variants
 from VibraVid.core.muxing import probe_media_file
 from VibraVid.core.ui.ui import build_table
 
@@ -64,13 +65,18 @@ def _is_dv(s) -> bool:
 
 
 def _normalize_lang(s) -> None:
-    """Uniform the language code to its primary subtag (e.g. 'it-IT' -> 'it')."""
+    """Normalise language code"""
     if s.type not in ("audio", "subtitle"):
         return
     
     base = getattr(s, "resolved_language", "") or getattr(s, "language", "")
-    if base:
+    if not base:
+        return
+    
+    if s.type == "audio":
         s.language = base.split("-")[0].lower()
+    else:
+        s.language = base.lower()
 
 
 class Generic_Downloader(BaseDownloader):
@@ -203,6 +209,13 @@ class Generic_Downloader(BaseDownloader):
                 stream.type = "subtitle"
                 if lang:
                     stream.language = lang
+                
+                # Also read the source's "tag" field (e.g. "forced")
+                src_tag = (src.get("tag") or tag or "").strip().lower()
+                if src_tag == "forced":
+                    stream.forced = True
+                elif src_tag:
+                    logger.debug(f"Subtitle tag '{src_tag}' not recognized — ignoring")
             
             else:
                 logger.warning(f"Unknown source role '{role}' — treating as video")
@@ -428,7 +441,7 @@ class Generic_Downloader(BaseDownloader):
 
             for i, a in enumerate(md_status.get("audios", []) or []):
                 lang = sel_audio_langs[i] if i < len(sel_audio_langs) else (a.get("name") or "und")
-                status["audios"].append({"path": a["path"], "name": a.get("name") or lang, "language": lang})
+                status["audios"].append({**a, "name": a.get("name") or lang, "language": lang, **language_variants(lang)})
 
             for sub in md_status.get("subtitles", []) or []:
                 if sub.get("path"):

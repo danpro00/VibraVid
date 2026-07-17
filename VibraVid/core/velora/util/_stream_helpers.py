@@ -25,15 +25,26 @@ _SEGMENT_EXTENSIONS = (
     "vtt", "srt", "ttml", "dfxp", "ass", "ssa", # subtitles
 )
 _FMP4_MERGED_AS_MP4 = frozenset({"m4s", "m4v", "m4i", "m4f", "cmfv"})
+_SUBTITLE_EXTENSIONS = (
+    "webvtt", "vtt", "srt", "ass", "ssa", "ttml2", "ttml", "xml", "dfxp", "m4a", "aac", "mp3",
+)
+_SUBTITLE_EXT_NORMALISED = {
+    "webvtt": "vtt",
+}
+
+
+def _ext_from_url_canon(url: str, extensions: tuple, default: str = "") -> str:
+    """Single URL→extension detector shared by all callers."""
+    path = (url or "").split("?")[0].lower()
+    for ext in extensions:
+        if path.endswith(f".{ext}"):
+            return _SUBTITLE_EXT_NORMALISED.get(ext, ext)
+    return default
 
 
 def detect_seg_ext(url: str, default: str = "ts") -> str:
     """Detect the media-segment container format from a URL path."""
-    path = url.split("?")[0].lower()
-    for ext in _SEGMENT_EXTENSIONS:
-        if path.endswith(f".{ext}"):
-            return ext
-    return default
+    return _ext_from_url_canon(url, _SEGMENT_EXTENSIONS, default=default)
 
 
 def merged_segment_ext(sample_url: str, default: str = "ts") -> str:

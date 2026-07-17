@@ -27,7 +27,7 @@ _PREFERRED_ORDER = [
     'foodnetwork',
     'tubitv',
     'cinezo',
-    'mostraguarda',
+    'altadefinzione',
     'eurostreaming',
     'amazon_music'
 ]

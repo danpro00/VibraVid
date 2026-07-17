@@ -31,6 +31,8 @@ def handle_direct_download(args) -> bool:
     drm_pref  = (getattr(args, 'drm', None) or 'auto').strip().lower()
     max_segs  = getattr(args, 'max_segments', None)
     max_time  = getattr(args, 'max_time', None)
+    skip_content_check = bool(getattr(args, 'skip_content_check', False))
+    skip_sanitize = bool(getattr(args, 'skip_sanitize', False))
 
     # Map DRM string to DRMType constant (or None if not recognized)
     drm_choice = None
@@ -43,8 +45,7 @@ def handle_direct_download(args) -> bool:
     EXTENSION_OUTPUT = config_manager.config.get("PROCESS", "extension")
     output = derive_output_path(url, output, EXTENSION_OUTPUT)
 
-    # Normalise key arg: single string → one-element list kept as list for
-    # the segment-based downloaders; MP4 doesn't use keys so it's ignored.
+    # Normalise key arg: single string → one-element list 
     key_arg = keys
 
     # Allow forcing the stream type (e.g. --type mp4)
@@ -60,6 +61,9 @@ def handle_direct_download(args) -> bool:
                 url=url,
                 path=output,
                 headers_=headers or None,
+                key=key_arg,
+                check_content_type=not skip_content_check,
+                sanitize_path=not skip_sanitize,
             )
 
             if error:
@@ -78,6 +82,7 @@ def handle_direct_download(args) -> bool:
                 key=key_arg,
                 max_segments=max_segs,
                 max_time=max_time,
+                sanitize_path=not skip_sanitize,
             )
             path, cancelled, error = dl.start()
 
@@ -98,6 +103,7 @@ def handle_direct_download(args) -> bool:
                 key=key_arg,
                 max_segments=max_segs,
                 max_time=max_time,
+                sanitize_path=not skip_sanitize,
             )
             path, cancelled, error = dl.start()
 
@@ -118,6 +124,7 @@ def handle_direct_download(args) -> bool:
                 key=key_arg,
                 max_segments=max_segs,
                 max_time=max_time,
+                sanitize_path=not skip_sanitize,
             )
             path, cancelled, error = dl.start()
 

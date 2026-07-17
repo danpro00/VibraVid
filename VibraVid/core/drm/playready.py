@@ -9,6 +9,7 @@ from rich.console import Console
 from VibraVid.setup import get_info_prd, binary_paths
 from VibraVid.utils.http_client import create_client
 from VibraVid.core.decryptor import KeysManager
+from VibraVid.core.drm.system import normalize_kid, accumulate_content_key
 
 
 console = Console()
@@ -99,12 +100,19 @@ def _get_playready_keys_local_cdm(pssh_list: list[dict], license_url: str, cdm_d
     # Open CDM session
     session_id = cdm.open()
     all_content_keys = []
+    extracted_kids = set()
 
     try:
         for item in pssh_list:
             pssh = item["pssh"]
-            kid_info = str(item.get("kid", "N/A")).replace("-", "").lower().strip()
+            kid_info = normalize_kid(item.get("kid", "N/A"))
             type_info = item.get("type", "unknown")
+
+            # Skip extra PSSH variants once this KID's key is already extracted (a manifest may
+            # offer several PSSH boxes for the same KID where only one is valid for the server).
+            if kid_info and kid_info != "n/a" and kid_info in extracted_kids:
+                continue
+
             console.print(f"[red]{type_info} [cyan](PSSH: [yellow]{pssh[:30]}...[cyan] KID: [red]{kid_info})")
 
             # Parse PSSH
@@ -167,11 +175,7 @@ def _get_playready_keys_local_cdm(pssh_list: list[dict], license_url: str, cdm_d
             try:
                 cdm.parse_license(session_id, license_payload)
                 for key_obj in cdm.get_keys(session_id):
-                    kid = key_obj.key_id.hex.replace("-", "").lower().strip()
-                    key_val = key_obj.key.hex().replace("-", "").strip()
-                    formatted_key = f"{kid}:{key_val}"
-                    if formatted_key not in all_content_keys:
-                        all_content_keys.append(formatted_key)
+                    accumulate_content_key(all_content_keys, extracted_kids, key_obj.key_id.hex, key_obj.key.hex())
             except Exception as e:
                 logger.error(f"Error extracting keys: {e}")
                 console.print(f"[red]Error extracting keys: {e}")

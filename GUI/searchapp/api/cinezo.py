@@ -16,12 +16,14 @@ class CinezoAPI(BaseStreamingAPI):
         self._search_fn = None
 
     def _get_search_fn(self):
+        """Lazy-load the service search function."""
         if self._search_fn is None:
             module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}")
             self._search_fn = getattr(module, "search")
         return self._search_fn
 
     def search(self, query: str) -> List[Entries]:
+        """Search for movies and series on Cinezo."""
         search_fn = self._get_search_fn()
         database  = search_fn(query, get_onlyDatabase=True)
         results   = []
@@ -41,6 +43,7 @@ class CinezoAPI(BaseStreamingAPI):
         return results
 
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
+        """Get seasons and episodes for a Cinezo series."""
         if media_item.is_movie:
             return None
 
@@ -69,6 +72,7 @@ class CinezoAPI(BaseStreamingAPI):
         return seasons if seasons else None
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
+        """Start downloading from Cinezo."""
         search_fn  = self._get_search_fn()
         selections = None
         

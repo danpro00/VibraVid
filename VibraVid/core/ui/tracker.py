@@ -521,7 +521,31 @@ class ContextTracker:
     def should_print(self) -> bool:
         """Returns False when console output should be suppressed (parallel CLI or GUI)."""
         return not self.is_gui and not self.is_parallel_cli
-    
+
+    @property
+    def download_errors(self) -> list:
+        lst = getattr(self.local, 'download_errors', None)
+        if lst is None:
+            lst = []
+            self.local.download_errors = lst
+        return lst
+
+    @property
+    def download_ok_count(self) -> int:
+        return getattr(self.local, 'download_ok_count', 0)
+
+    def reset_download_result(self) -> None:
+        """Clear the per-download outcome before a new (GUI) download starts."""
+        self.local.download_errors = []
+        self.local.download_ok_count = 0
+
+    def report_download_error(self, message) -> None:
+        if message:
+            self.download_errors.append(str(message))
+
+    def report_download_success(self) -> None:
+        self.local.download_ok_count = self.download_ok_count + 1
+
     def __str__(self):
         return f"ContextTracker(download_id={self.download_id}, title={self.title}, site_name={self.site_name}, media_type={self.media_type}, season={self.season}, episode={self.episode}, episode_name={self.episode_name}, is_gui={self.is_gui}, is_parallel_cli={self.is_parallel_cli})"
 

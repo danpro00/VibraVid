@@ -250,8 +250,8 @@ def load_search_functions() -> Dict[str, LazySearchModule]:
     for module_name, indice, use_for, source, base_path, has_cli_args in modules_metadata:
         if indice in indice_map:
             existing_module = indice_map[indice]
-            logger.error(f"Duplicate indice detected: Both '{module_name}' and '{existing_module}' have indice={indice}")
-            console.print(f"[red]Error: Duplicate indice={indice} for modules '{module_name}' and '{existing_module}'[/red]")
+            logger.warning(f"Duplicate indice detected: Both '{module_name}' and '{existing_module}' have indice={indice}")
+            console.print(f"[yellow]Warning: Duplicate indice={indice} for modules '{module_name}' and '{existing_module}'[/yellow]")
         else:
             indice_map[indice] = module_name
 

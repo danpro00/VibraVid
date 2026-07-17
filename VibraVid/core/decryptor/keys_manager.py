@@ -104,6 +104,15 @@ class KeysManager:
         return bool(kid and kid.lower() == "0" * len(kid))
 
     @classmethod
+    def resolve_placeholder_kid(cls, detected_kid: Optional[str], normalized_keys: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """A single key supplied with the "1" no-KID placeholder should be replaced with the detected KID, if available and non-zero."""
+        if len(normalized_keys) != 1 or normalized_keys[0][0] != "1":
+            return normalized_keys
+        if not detected_kid or cls.is_zero_kid(detected_kid):
+            return normalized_keys
+        return [(detected_kid.lower(), normalized_keys[0][1])]
+
+    @classmethod
     def resolve_fixed_key(cls, encrypted_path: str, detected_kid: Optional[str], normalized_keys: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """
         For fixed-key streams (all-zero KID) with multiple candidates, narrow to the

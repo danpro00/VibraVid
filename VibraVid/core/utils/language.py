@@ -1,5 +1,11 @@
 # 28.02.26
 
+from typing import Dict
+
+
+_SUBTITLE_FLAG_WORDS = ("forced", "cc", "sdh", "hi", "default")
+
+
 LANGUAGE_MAP = {
 
     # --- ISO 639-2/T (terminological, 3 char) ---
@@ -52,14 +58,31 @@ LANGUAGE_MAP = {
     "scr": "hr-HR",
     "alb": "sq-AL",
 
+    # --- Additional ISO 639-2 codes (were missing → kept raw 3-letter before) ---
+    "est": "et-EE", 
+    "et": "et-EE",
+    "ice": "is-IS", 
+    "isl": "is-IS", 
+    "is": "is-IS",
+    "lit": "lt-LT", 
+    "lt": "lt-LT",
+    "lav": "lv-LV", 
+    "lv": "lv-LV",
+    "mac": "mk-MK", 
+    "mkd": "mk-MK", 
+    "mk": "mk-MK",
+    "mon": "mn-MN", 
+    "mn": "mn-MN",
+    "nob": "nb-NO",
+
     # --- ISO 639-1 (2 char) ---
     "it": "it-IT",
     "en": "en-US",
     "ja": "ja-JP",
     "de": "de-DE",
     "fr": "fr-FR",
-    # "es": "es-419",
-    # "pt": "pt-BR",
+    "es": "es-419",
+    "pt": "pt-BR",
     "ru": "ru-RU",
     "ar": "ar-SA",
     "zh": "zh-CN",
@@ -131,17 +154,16 @@ LANGUAGE_MAP = {
     "albanian": "sq-AL",
 
     # --- Common region/country shortcuts ---
+    # ("pt" and "es" already covered above by the ISO 639-1 block.)
     "us": "en-US",
     "gb": "en-GB",
     "au": "en-AU",
     "br": "pt-BR",
-    "pt": "pt-PT",
     "jp": "ja-JP",
     "cn": "zh-CN",
     "tw": "zh-TW",
     "kr": "ko-KR",
     "mx": "es-MX",
-    "es": "es-ES",
 
     # --- BCP 47 variants (pass-through normalization) ---
     "pt-br": "pt-BR",
@@ -511,10 +533,53 @@ def resolve_locale(lang: str) -> str:
 
     if "-" in lang:
         parts = lang.split("-", 1)
+        mapped = LANGUAGE_MAP.get(f"{parts[0].lower()}-{parts[1].lower()}")
+        if mapped:
+            return mapped
         normalised = f"{parts[0].lower()}-{parts[1].upper()}"
-        return LANGUAGE_MAP.get(normalised, normalised if len(parts[1]) == 2 else lang)
+        return normalised if len(parts[1]) == 2 else lang
 
     return LANGUAGE_MAP.get(lang.lower(), "")
+
+
+_SUBTITLE_FLAGS = ("forced", "cc", "sdh", "hi", "default")
+
+
+def resolve_ietf(value: str) -> str:
+    """Region-preserving BCP-47 tag for muxers that store a language-ietf field (mkvmerge)."""
+    raw = (value or "").strip()
+    if not raw:
+        return "und"
+
+    low = raw.lower()
+    for flag in _SUBTITLE_FLAGS:
+        for sep in ("_", "-"):
+            suffix = sep + flag
+            if low.endswith(suffix):
+                raw = raw[: -len(suffix)]
+                low = raw.lower()
+                break
+
+    raw = raw.replace("_", "-")
+    if not raw:
+        return "und"
+
+    parts = raw.split("-")
+    result = []
+    for i, part in enumerate(parts):
+        if i == 0:
+            if 2 <= len(part) <= 8 and part.isalpha():
+                result.append(part.lower())
+            else:
+                return "und"
+        elif i == 1:
+            if len(part) == 2 and part.isalpha():        # region: 2 letters (US, FR, …)
+                result.append(part.upper())
+            elif len(part) == 3 and part.isdigit():      # numeric region: 3 digits (419, …)
+                result.append(part)
+            break
+
+    return "-".join(result) if result else "und"
 
 
 def resolve_iso639_2(lang: str) -> str:
@@ -538,3 +603,62 @@ def resolve_iso639_2(lang: str) -> str:
 
     token = "".join(ch for ch in token if ch.isalpha())
     return _ISO639_2_FROM_NAME.get(token, "und")
+
+
+def resolve_iso639_1(lang: str) -> str:
+    """Convert a language code or name to an ISO 639-1 (2-letter) code, e.g. "it"."""
+    bcp47 = resolve_locale(lang)
+    if bcp47:
+        return bcp47.split("-", 1)[0].lower()
+
+    raw = (lang or "").strip().lower()
+    if len(raw) == 2 and raw.isalpha():
+        return raw
+    return ""
+
+
+def extract_lang_and_flags(lang_raw: str, track_info: Dict = None):
+    """Split a raw language string like ``en-us_cc`` into (base_lang, flags_set)."""
+    import re as _re
+    parts = _re.split(r"[-_]", lang_raw or "")
+    flags = set()
+    clean = []
+
+    if track_info:
+        if track_info.get("forced"):
+            flags.add("forced")
+        if track_info.get("sdh"):
+            flags.add("sdh")
+        if track_info.get("cc"):
+            flags.add("cc")
+        if track_info.get("default"):
+            flags.add("default")
+
+    for p in parts:
+        if p.lower() in _SUBTITLE_FLAG_WORDS:
+            flags.add(p.lower())
+        else:
+            clean.append(p)
+    return "-".join(clean), flags
+
+
+def subtitle_flags(lang_raw: str, track_info: Dict = None) -> Dict[str, bool]:
+    """Return {'forced','cc','sdh','default'} booleans parsed from a raw language string and/or track dict."""
+    _, flags = extract_lang_and_flags(lang_raw, track_info)
+    forced = "forced" in flags
+    return {
+        "forced": forced,
+        "sdh": "sdh" in flags,
+        "cc": "cc" in flags or "hi" in flags,
+        "default": "default" in flags and not forced,
+    }
+
+
+def language_variants(lang_raw: str) -> Dict[str, str]:
+    """Return the same language expressed as BCP-47, ISO 639-1 and ISO 639-2 codes."""
+    base = (lang_raw or "").strip()
+    return {
+        "language_bcp47": resolve_locale(base) or base,
+        "language_iso2": resolve_iso639_1(base),
+        "language_iso3": resolve_iso639_2(base),
+    }

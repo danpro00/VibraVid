@@ -21,10 +21,13 @@ SOURCES = [
     {
         "url": "<url>",
         "key": "<key>"
+        "type": "video"
     },
     {
         "url": "<url>",
         "key": "<key>"
+        "language": "en",
+        "type": "audio"
     },
 ]
 

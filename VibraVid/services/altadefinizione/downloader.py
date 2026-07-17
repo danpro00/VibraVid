@@ -15,7 +15,7 @@ from VibraVid.services._base.tv_download_manager import process_season_selection
 from VibraVid.core.downloader import HLS_Downloader
 
 from VibraVid.player.vidxgo import VideoSource as VidXgoVideoSource
-from VibraVid.services.mostraguarda.scrapper import GetSerieInfo
+from VibraVid.services.altadefinizione.scrapper import GetSerieInfo
 
 
 console = Console()

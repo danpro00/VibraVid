@@ -1,0 +1,163 @@
+# 16.07.26
+
+import os
+import logging
+from typing import Optional
+
+from rich.console import Console
+
+from VibraVid.utils import config_manager
+from VibraVid.services._base import site_constants, Entries
+from VibraVid.services._base.tv_display_manager import map_song_path
+from VibraVid.core.ui.tracker import context_tracker
+from VibraVid.core.downloader import MP4_Downloader
+from VibraVid.core.muxing.helper.audio import process_song
+
+from VibraVid.services.lucida.downloader import _existing_audio_file
+
+from . import amazon
+from .amazon import AmazonError
+
+
+console = Console()
+logger = logging.getLogger(__name__)
+
+
+def _amazon_bypass_enabled() -> bool:
+    try:
+        return config_manager.config.get_bool("MONOCHROME", "amazon_bypass", default=True)
+    except Exception:
+        return True
+
+
+def _amazon_quality() -> str:
+    try:
+        return config_manager.config.get("MONOCHROME", "amazon_quality", str, default="UHD")
+    except Exception:
+        return "UHD"
+
+
+def _download_via_amazon(select_title) -> Optional[str]:
+    """Resolve + download straight from Amazon Music, bypassing lucida.to entirely."""
+    title = getattr(select_title, "title", "") or getattr(select_title, "name", "")
+    artist = getattr(select_title, "artist", "")
+    album = getattr(select_title, "album", "")
+    year = getattr(select_title, "year", "")
+    cover = getattr(select_title, "image", "")
+    track_number = getattr(select_title, "track", None) or None
+    duration = getattr(select_title, "duration_seconds", None)
+
+    if not duration:
+        amazon_id = getattr(select_title, "id", None)
+        if amazon_id:
+            from VibraVid.provider.amazon import amazon_music
+            info = amazon_music.get_track(str(amazon_id))
+            if info:
+                duration = info.get("duration")
+                title = title or info.get("title", "")
+                artist = artist or (info.get("artist") or {}).get("name", "")
+                album = album or (info.get("album") or {}).get("name", "")
+
+    if not duration:
+        logger.info("[monochrome/amazon] no raw duration on entry — cannot match against Amazon Music.")
+        return None
+
+    console.print(f"[cyan]Searching on amazon for: [yellow]{artist} - {title}[/yellow]")
+    try:
+        resp = amazon.get_track_link(title=title, duration=int(duration), album=album, artist=artist, quality=_amazon_quality())
+    except AmazonError as e:
+        logger.warning(f"[monochrome/amazon] resolve failed: {e}")
+        return None
+    except Exception:
+        logger.exception(f"[monochrome/amazon] unexpected resolve error for {title!r}")
+        return None
+
+    stream_url = amazon.extract_stream_url(resp)
+    if not stream_url:
+        logger.info(f"[monochrome/amazon] no Amazon Music match for: {artist} - {title} (response keys: {list(resp.keys())})")
+        return None
+
+    key_hex = amazon.extract_decryption_key(resp)
+    logger.info(f"[monochrome/amazon] match found for {artist!r} - {title!r}: stream_url={stream_url[:80]!r}… encrypted={bool(key_hex)}")
+
+    path_components, filename = map_song_path(artist=artist, album=album, title=title, year=year, track_number=track_number)
+    dest_base = os.path.join(site_constants.MUSIC_FOLDER, *path_components, filename)
+
+    existing = _existing_audio_file(dest_base)
+    if existing:
+        logger.info(f"[monochrome/amazon] found existing file, skipping download: {existing}")
+        console.print(f"[dim]Already downloaded, skipping: {os.path.basename(existing)}")
+        context_tracker.report_download_success()
+        return existing
+
+    out_path = f"{dest_base}.m4a"
+    logger.info(f"[monochrome/amazon] downloading to: {out_path}")
+    result_path, stopped, error = MP4_Downloader(
+        url=stream_url,
+        path=out_path,
+        referer="https://amz.geeked.wtf/",
+        key=[f"1:{key_hex}"] if key_hex else None,
+        label="Audio",
+        check_content_type=False,
+        sanitize_path=False,
+    )
+    if stopped:
+        logger.info(f"[monochrome/amazon] download stopped for {title!r}")
+        return None
+    if not result_path or error:
+        logger.warning(f"[monochrome/amazon] download failed for {title!r}: result_path={result_path!r} error={error!r} (out_path existed before download? {os.path.exists(out_path)})")
+        return None
+    logger.info(f"[monochrome/amazon] downloaded: {result_path}")
+
+    context_tracker.report_download_success()
+    final_path = process_song(
+        file_path=result_path, title=title, artist=artist, album=album,
+        year=year, track_number=track_number, cover_url=cover,
+    )
+    logger.info(f"[monochrome/amazon] done: {final_path} (exists={os.path.exists(final_path)})")
+    return final_path
+
+
+def download_song(select_title) -> Optional[str]:
+    """Download a monochrome track via the Amazon Music CDN bypass (see amazon.py)"""
+    title = getattr(select_title, "title", "") or getattr(select_title, "name", "")
+
+    if _amazon_bypass_enabled():
+        try:
+            path = _download_via_amazon(select_title)
+            if path:
+                return path
+        except Exception:
+            logger.exception(f"[monochrome/amazon] path crashed for {select_title.name!r}")
+
+    message = f"No source found to download '{title}'."
+    logger.info(f"[monochrome] {message}")
+    console.print(f"[red]{message}")
+    context_tracker.report_download_error(message)
+    return None
+
+
+def download_track_from_album(episode_dict, season_number: int, episode_index: int, scrape_serie) -> tuple:
+    """Download one track of a monochrome (Amazon Music) album."""
+    is_dict = isinstance(episode_dict, dict)
+    name = (episode_dict.get("name") if is_dict else getattr(episode_dict, "name", None)) or "Unknown Track"
+    track_number = episode_dict.get("number") if is_dict else getattr(episode_dict, "number", None)
+
+    entry = Entries(
+        id=episode_dict.get("id") if is_dict else getattr(episode_dict, "id", None),
+        name=name,
+        type="song",
+        url=episode_dict.get("url") if is_dict else getattr(episode_dict, "url", None),
+    )
+    entry.title = name
+    entry.artist = (episode_dict.get("artist") if is_dict else getattr(episode_dict, "artist", "")) or getattr(scrape_serie, "artist", "")
+    entry.album = getattr(scrape_serie, "title", "")
+    entry.year = (episode_dict.get("year") if is_dict else getattr(episode_dict, "year", "")) or getattr(scrape_serie, "year", "")
+    entry.image = (episode_dict.get("cover") if is_dict else getattr(episode_dict, "cover", "")) or getattr(scrape_serie, "cover_url", "")
+    entry.track = track_number
+    entry.duration_seconds = episode_dict.get("duration_seconds") if is_dict else getattr(episode_dict, "duration_seconds", None)
+
+    path = download_song(entry)
+    if path:
+        return (path, False, None)
+    return (None, False, f"Download failed for '{name}'")

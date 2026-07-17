@@ -1,11 +1,12 @@
 # 16.12.25
 
-import os
+import base64
 import json
+import time
 import uuid
 from typing import Tuple, Optional
 
-from VibraVid.utils import config_manager
+from VibraVid.utils import config_manager, disk_cache
 from VibraVid.utils.http_client import create_client, get_userAgent, get_headers
 
 
@@ -13,7 +14,7 @@ tubi_email = config_manager.login.get('tubi', 'email')
 tubi_password = config_manager.login.get('tubi', 'password')
 
 _cached_token = None
-CACHE_FILE = os.path.join(config_manager.base_path, ".cache", "tubi_token.json")
+_FALLBACK_TTL_SECONDS = 3600
 
 
 def generate_device_id():
@@ -21,24 +22,30 @@ def generate_device_id():
     return str(uuid.uuid4())
 
 
+def _jwt_expiry(token: str) -> Optional[float]:
+    """Return a JWT's `exp` claim (epoch seconds), or None if undecodable."""
+    try:
+        part = token.split(".")[1]
+        part += "=" * (4 - len(part) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(part))
+        return float(payload["exp"])
+    except (IndexError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+
+
 def get_bearer_token():
     """Get the Bearer token required for Tubi TV authentication"""
     global _cached_token
-    
+
     # Try memory cache
     if _cached_token:
         return _cached_token
-        
+
     # Try disk cache
-    if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, 'r') as f:
-                data = json.load(f)
-                _cached_token = data.get('access_token')
-                if _cached_token:
-                    return _cached_token
-        except Exception:
-            pass
+    data = disk_cache.load("tubitv", "token")
+    if data and data.get('access_token') and disk_cache.is_fresh(data, buffer_seconds=60):
+        _cached_token = data['access_token']
+        return _cached_token
 
     if not tubi_email or not tubi_password:
         raise Exception("Email or Password not set in configuration.")
@@ -59,23 +66,15 @@ def get_bearer_token():
             'https://account.production-public.tubi.io/user/login',
             json=json_data
         )
-    
+
     if response.status_code == 503:
         raise Exception("Service Unavailable: Set VPN to America.")
-    
+
     login_data = response.json()
     _cached_token = login_data['access_token']
-    
-    # Save to disk cache
-    try:
-        cache_dir = os.path.dirname(CACHE_FILE)
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir, exist_ok=True)
-        with open(CACHE_FILE, 'w') as f:
-            json.dump(login_data, f)
-    except Exception:
-        pass
-
+    expiry = _jwt_expiry(_cached_token) or (time.time() + _FALLBACK_TTL_SECONDS)
+    login_data['expiry'] = expiry
+    disk_cache.save("tubitv", "token", login_data)
     return _cached_token
 
 

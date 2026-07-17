@@ -13,6 +13,31 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 DOCKER_SOCKET = "/var/run/docker.sock"
+PROJECT_MOUNT = "/project"
+_UPDATE_STASH = os.path.join(os.environ.get("DJANGO_DB_DIR", "/app/data"), ".vibravid_update.json")
+
+
+def _looks_poisoned(path: str) -> bool:
+    """True if a compose path label points at the helper mount instead of a host path."""
+    return (not path) or path == PROJECT_MOUNT or path.startswith(PROJECT_MOUNT + "/")
+
+
+def _read_update_stash() -> dict:
+    try:
+        with open(_UPDATE_STASH, "rt", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_update_stash(workdir: str, config_files: str) -> None:
+    try:
+        os.makedirs(os.path.dirname(_UPDATE_STASH), exist_ok=True)
+        with open(_UPDATE_STASH, "wt", encoding="utf-8") as fh:
+            json.dump({"workdir": workdir, "config_files": config_files}, fh)
+    except Exception as exc:
+        logger.debug("Could not persist update stash: %s", exc)
 
 
 def _is_docker() -> bool:
@@ -80,9 +105,9 @@ def _update_docker() -> dict:
             "success": False,
             "needs_manual": True,
             "message": (
-                "Docker socket non montato. Aggiungi "
-                "'- /var/run/docker.sock:/var/run/docker.sock' ai volumes del "
-                "container e ricrealo, oppure aggiorna a mano con "
+                "Docker socket not mounted. Add "
+                "'- /var/run/docker.sock:/var/run/docker.sock' to the "
+                "container volumes and recreate it, or update manually with "
                 "'docker compose pull && docker compose up -d'."
             ),
         }
@@ -90,12 +115,12 @@ def _update_docker() -> dict:
     docker = shutil.which("docker")
     if not docker:
         return {"success": False, "needs_manual": True,
-                "message": "CLI 'docker' non disponibile nel container."}
+                "message": "The 'docker' CLI is not available in the container."}
 
     cid = _self_container_id()
     if not cid:
         return {"success": False,
-                "message": "Impossibile determinare il container corrente."}
+                "message": "Unable to determine the current container."}
 
     # Read compose labels + image ref of the running container.
     try:
@@ -106,10 +131,10 @@ def _update_docker() -> dict:
     except subprocess.CalledProcessError as exc:
         msg = (exc.output or "").strip()
         if "permission denied" in msg.lower():
-            return {"success": False, "needs_manual": True, "message": "Permesso negato sul socket Docker: l'utente del container non è nel gruppo del socket."}
-        return {"success": False, "message": f"docker inspect fallito: {msg}"}
+            return {"success": False, "needs_manual": True, "message": "Permission denied on the Docker socket: the container user is not in the socket's group."}
+        return {"success": False, "message": f"docker inspect failed: {msg}"}
     except Exception as exc:
-        return {"success": False, "message": f"docker inspect fallito: {exc}"}
+        return {"success": False, "message": f"docker inspect failed: {exc}"}
 
     labels_line, _, image_ref = raw.partition("\n")
     image_ref = image_ref.strip()
@@ -121,23 +146,44 @@ def _update_docker() -> dict:
     project = labels.get("com.docker.compose.project")
     workdir = labels.get("com.docker.compose.project.working_dir")
     config_files = labels.get("com.docker.compose.project.config_files")
-    if not project or not workdir or not config_files:
+    if not project:
         return {
             "success": False,
             "needs_manual": True,
-            "message": ("Il container non è stato avviato con docker compose; aggiorna a mano con 'docker compose pull && docker compose up -d'."),
+            "message": ("The container was not started with docker compose; update manually with 'docker compose pull && docker compose up -d'."),
         }
     if not image_ref:
         return {"success": False,
-                "message": "Impossibile determinare l'immagine del container."}
+                "message": "Unable to determine the container image."}
 
-    project_mount = "/project"
+    # A previous in-app update may have poisoned the working_dir label to
+    # PROJECT_MOUNT. Prefer the host path persisted on a clean run; fall back to
+    # the label only when it still looks like a real host path.
+    stash = _read_update_stash()
+    if _looks_poisoned(workdir) and stash.get("workdir"):
+        workdir = stash["workdir"]
+        config_files = config_files or stash.get("config_files")
+        
+    if _looks_poisoned(workdir) or not config_files:
+        return {
+            "success": False,
+            "needs_manual": True,
+            "message": (
+                "The container's compose labels were corrupted by a previous "
+                "update (working_dir='/project'). Run "
+                "'docker compose up -d' once from the project folder on the "
+                "host to restore them, then the in-app update will work again."
+            ),
+        }
+
+    _write_update_stash(workdir, config_files)
+    project_mount = PROJECT_MOUNT
     targets = [
         _remap_under(workdir, cf.strip(), project_mount)
         for cf in config_files.split(",") if cf.strip()
     ]
     if not targets:
-        return {"success": False, "message": "Nessun file compose individuato."}
+        return {"success": False, "message": "No compose file found."}
 
     cfg_flags = " ".join(f"-f '{t}'" for t in targets)
     compose = (f"docker compose -p '{project}' "f"--project-directory '{project_mount}' {cfg_flags}")
@@ -155,24 +201,24 @@ def _update_docker() -> dict:
     try:
         subprocess.run(helper, check=True, timeout=30, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
-        return {"success": False, "message": f"Avvio updater fallito: {(exc.stderr or exc.stdout or '').strip()}"}
+        return {"success": False, "message": f"Failed to start updater: {(exc.stderr or exc.stdout or '').strip()}"}
     except Exception as exc:
-        return {"success": False, "message": f"Avvio updater fallito: {exc}"}
+        return {"success": False, "message": f"Failed to start updater: {exc}"}
 
     logger.info("Docker self-update helper launched (image=%s)", image_ref)
-    return {"success": True, "message": "Aggiornamento avviato: pull dell'immagine e ricreazione del container in corso."}
+    return {"success": True, "message": "Update started: pulling the image and recreating the container."}
 
 
 def _update_installer() -> dict:
     try:
         from VibraVid.utils.upload.update import auto_update
     except Exception as exc:
-        return {"success": False, "message": f"auto_update non disponibile: {exc}"}
+        return {"success": False, "message": f"auto_update not available: {exc}"}
 
     # auto_update() downloads the new executable and calls sys.exit() to
     # relaunch; run it detached so we can still answer the HTTP request.
     threading.Thread(target=auto_update, daemon=True).start()
-    return {"success": True, "message": "Download dell'aggiornamento avviato; l'app si riavvierà."}
+    return {"success": True, "message": "Update download started; the app will restart."}
 
 
 def _repo_root() -> str | None:
@@ -197,19 +243,19 @@ def _update_source() -> dict:
     git = shutil.which("git")
     repo = _repo_root()
     if not git or not repo:
-        return {"success": False, "needs_manual": True, "message": "Installazione da sorgente senza git: aggiorna a mano."}
+        return {"success": False, "needs_manual": True, "message": "Source installation without git: update manually."}
 
     # No remote -> nothing to pull (common for source downloads).
     try:
         remotes = subprocess.check_output(
             [git, "-C", repo, "remote"], text=True, timeout=15).strip()
     except Exception as exc:
-        return {"success": False, "message": f"git remote fallito: {exc}"}
+        return {"success": False, "message": f"git remote failed: {exc}"}
     if not remotes:
         return {
             "success": False,
             "needs_manual": True,
-            "message": ("Nessun remote git configurato. Aggiungilo con 'git remote add origin <url>' oppure aggiorna a mano."),
+            "message": ("No git remote configured. Add one with 'git remote add origin <url>' or update manually."),
         }
 
     try:
@@ -218,13 +264,13 @@ def _update_source() -> dict:
             check=True, timeout=180, capture_output=True, text=True)
     except subprocess.CalledProcessError as exc:
         return {"success": False,
-                "message": f"git pull fallito: {(exc.stderr or exc.stdout or '').strip()}"}
+                "message": f"git pull failed: {(exc.stderr or exc.stdout or '').strip()}"}
     except Exception as exc:
-        return {"success": False, "message": f"git pull fallito: {exc}"}
+        return {"success": False, "message": f"git pull failed: {exc}"}
 
     logger.info("Source update: %s", (out.stdout or "").strip())
     threading.Thread(target=_delayed_reexec, daemon=True).start()
-    return {"success": True, "message": "Codice aggiornato; riavvio del processo in corso."}
+    return {"success": True, "message": "Code updated; restarting the process."}
 
 
 def perform_update() -> dict:

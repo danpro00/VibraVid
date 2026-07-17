@@ -1,5 +1,7 @@
 # 13.03.26
 
+import re
+
 VIDEO_CODEC_MAP: dict[str, str] = {
     "avc1":     "H.264",
     "h264":     "H.264",
@@ -146,6 +148,21 @@ VIDEO_CODEC_PREFIXES: tuple[str, ...] = (
 
 DV_CODEC_PREFIXES: tuple[str, ...] = ("dvh1", "dvhe", "dvav", "dav1")
 
+
+def infer_video_range(codecs: str) -> str:
+    """Infer the HDR/DV type from a codec string (shared by DASH and HLS parsers)."""
+    c = (codecs or "").lower()
+    for prefix in DV_CODEC_PREFIXES:
+        if c.startswith(prefix) or f",{prefix}" in c:
+            return "DV"
+    if re.search(r"hvc1\.2\.|hev1\.2\.", c):
+        return "HDR10"
+    if re.search(r"hvc1\.8\.|hev1\.8\.", c):
+        return "HDR10"
+    if re.search(r"av01\.[12]\.", c):
+        return "HDR10"
+    return ""
+
 VIDEO_EXTENSIONS: frozenset[str] = frozenset({
     ".mp4",
     ".mkv",
@@ -199,9 +216,24 @@ CODEC_EXTENSION_MAP: dict[str, str] = {
     "ec-3":  "m4a",
     "ac-3":  "m4a",
     "ac-4":  "m4a",
-    "opus":  "webm",
     "flac":  "flac",
     "alac":  "m4a",
+
+    # Song Audio
+    "aac":   "m4a",
+    "ac3":   "ac3",
+    "eac3":  "eac3",
+    "mp3":   "mp3",
+    "mp3float": "mp3",
+    "dts":   "dts",
+    "dca":   "dts",
+    "vorbis": "ogg",
+    "pcm_s16le": "wav",
+    "pcm_s24le": "wav",
+    "opus":   "opus",
+    "libopus": "opus",
+    "libvorbis": "ogg",
+    "libmp3lame": "mp3",
 
     # Subtitle
     "wvtt":  "vtt",

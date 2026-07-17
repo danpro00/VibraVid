@@ -10,6 +10,7 @@ from rich.console import Console
 from VibraVid.setup import get_info_wvd, binary_paths
 from VibraVid.utils.http_client import create_client
 from VibraVid.core.decryptor import KeysManager
+from VibraVid.core.drm.system import normalize_kid, accumulate_content_key
 
 
 console = Console()
@@ -86,13 +87,6 @@ def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
     device = None
     cdm = None
 
-    # Create a set of all expected KIDs (normalized)
-    expected_kids = set()
-    for item in pssh_list:
-        kid = str(item.get("kid", "")).replace("-", "").lower().strip()
-        if kid and kid != "n/a":
-            expected_kids.add(kid)
-
     # Initialize device
     if cdm_device_path is not None:
         console.print(f"\n{get_info_wvd(cdm_device_path)}")
@@ -138,7 +132,7 @@ def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
     try:
         for i, item in enumerate(pssh_list):
             pssh = item["pssh"]
-            kid_info = str(item.get("kid", "N/A")).replace("-", "").lower().strip()
+            kid_info = normalize_kid(item.get("kid", "N/A"))
             type_info = item.get("type", "unknown")
 
             # Skip extra PSSH variants once this KID's key is already extracted (a manifest may
@@ -170,11 +164,7 @@ def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
                         if key_obj.type != "CONTENT":
                             continue
                         
-                        kid = key_obj.kid.hex.lower().strip()
-                        formatted_key = f"{kid}:{key_obj.key.hex()}"
-                        if formatted_key not in all_content_keys:
-                            all_content_keys.append(formatted_key)
-                            extracted_kids.add(kid)
+                        accumulate_content_key(all_content_keys, extracted_kids, key_obj.kid.hex, key_obj.key.hex())
                             
                 except Exception as e:
                     console.print(f"[red]Error extracting keys for PSSH {pssh[:30]}...: {e}")
@@ -251,12 +241,7 @@ def _get_widevine_keys(pssh_list: list[dict], license_url: str, cdm_device_path:
                     if key_obj.type != "CONTENT":
                         continue
 
-                    # Get KID and normalize
-                    kid = key_obj.kid.hex.lower().strip()
-                    formatted_key = f"{kid}:{key_obj.key.hex()}"
-                    if formatted_key not in all_content_keys:
-                        all_content_keys.append(formatted_key)
-                        extracted_kids.add(kid)
+                    accumulate_content_key(all_content_keys, extracted_kids, key_obj.kid.hex, key_obj.key.hex())
             except Exception as e:
                 console.print(f"[red]Error extracting keys for PSSH {pssh[:30]}...: {e}")
                 continue

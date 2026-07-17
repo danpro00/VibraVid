@@ -195,7 +195,7 @@ def search(request: HttpRequest) -> HttpResponse:
             return redirect("search_home")
 
     if not form.is_valid():
-        messages.error(request, "Dati non validi")
+        messages.error(request, "Invalid data")
         return render(request, "searchapp/home.html", {"form": form})
 
     site = form.cleaned_data["site"]
@@ -206,7 +206,7 @@ def search(request: HttpRequest) -> HttpResponse:
     if global_sites is not None:
         results, failed = _run_global_search(query, global_sites)
         if failed:
-            messages.warning(request, f"Alcune fonti non hanno risposto: {', '.join(failed)}")
+            messages.warning(request, f"Some sources didn't respond: {', '.join(failed)}")
         return render(
             request,
             "searchapp/results.html",
@@ -225,7 +225,7 @@ def search(request: HttpRequest) -> HttpResponse:
         media_items = api.search(query)
         results = [_media_item_to_display_dict(item, site) for item in media_items]
     except Exception as e:
-        messages.error(request, f"Errore nella ricerca: {e}")
+        messages.error(request, f"Search error: {e}")
         return render(request, "searchapp/home.html", {"form": form})
 
     download_form = DownloadForm()
@@ -316,8 +316,23 @@ def _run_download_in_thread(site: str, item_payload: Dict[str, Any], season: str
                 raise RuntimeError(error_msg)
 
             print("[_task] Download completed successfully")
+
+            # Clear the scheduled placeholder and guarantee a terminal history
+            # entry. The downstream downloader normally registers the id into the
+            # tracker (scheduled -> active -> history), but when it takes a
+            # shortcut (e.g. the target file already exists) it never touches the
+            # tracker, which would otherwise leave a ghost row stuck in
+            # "scheduled" forever.
+            _remove_scheduled_download(download_id)
+            already_in_history = any(
+                item.get("id") == download_id
+                for item in download_tracker.get_history()
+            )
+            if download_id not in download_tracker.downloads and not already_in_history:
+                download_tracker.start_download(download_id, title, site, media_type)
+                download_tracker.complete_download(download_id, success=True)
         except Exception as e:
-            error_msg = str(e) or "Errore sconosciuto"
+            error_msg = str(e) or "Unknown error"
             print(f"[Error] Download task failed: {error_msg}")
             import traceback
             traceback.print_exc()
@@ -417,7 +432,7 @@ def start_download(request: HttpRequest) -> HttpResponse:
     """Handle download requests for movies or individual series selections."""
     form = DownloadForm(request.POST)
     if not form.is_valid():
-        error_msg = f"Dati non validi: {form.errors.as_text()}"
+        error_msg = f"Invalid data: {form.errors.as_text()}"
         print(f"[Error] {error_msg}")
         messages.error(request, error_msg)
         return redirect("search_home")
@@ -439,7 +454,7 @@ def start_download(request: HttpRequest) -> HttpResponse:
     try:
         item_payload = json.loads(item_payload_raw)
     except Exception:
-        messages.error(request, "Payload non valido")
+        messages.error(request, "Invalid payload")
         return redirect("search_home")
 
     # Determine media type
@@ -455,7 +470,7 @@ def start_download(request: HttpRequest) -> HttpResponse:
 
     # Check for series episode selection
     if media_type == "Serie" and season and not episode:
-        messages.error(request, "Seleziona almeno un episodio prima di scaricare!")
+        messages.error(request, "Select at least one episode before downloading!")
 
     # Run download
     _run_download_in_thread(source_alias, item_payload, season, episode, media_type, audio_format=audio_format)
@@ -477,9 +492,9 @@ def series_detail(request: HttpRequest) -> HttpResponse:
     item_payload_raw = request.GET.get("item_payload")
     
     if not source_alias or not item_payload_raw:
-        messages.error(request, "Parametri mancanti.")
+        messages.error(request, "Missing parameters.")
         return redirect("search_home")
-    
+
     try:
         item_payload = json.loads(item_payload_raw)
         api = get_api(source_alias)
@@ -513,7 +528,7 @@ def series_detail(request: HttpRequest) -> HttpResponse:
         seasons = api.get_series_metadata(media_item)
 
         if not seasons:
-            messages.warning(request, "Impossibile caricare i dettagli delle stagioni al momento. Potrebbe essere dovuto a download attivi. Riprova tra qualche minuto.")
+            messages.warning(request, "Unable to load season details right now. This may be due to active downloads. Try again in a few minutes.")
             seasons = []  # Allow page to load with empty seasons
         
         series_info = {
@@ -552,7 +567,7 @@ def series_detail(request: HttpRequest) -> HttpResponse:
         )
         
     except Exception as e:
-        messages.error(request, f"Errore nel caricamento dei dettagli: {e}")
+        messages.error(request, f"Error loading details: {e}")
         return redirect("search_home")
 
 def _handle_series_download(request: HttpRequest) -> HttpResponse:
@@ -564,13 +579,13 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
     selected_episodes = request.POST.get("selected_episodes", "")
 
     if not all([source_alias, item_payload_raw]):
-        messages.error(request, "Parametri base mancanti per il download.")
+        messages.error(request, "Missing base parameters for the download.")
         return redirect("search_home")
 
     try:
         item_payload = json.loads(item_payload_raw)
     except Exception:
-        messages.error(request, "Errore nel parsing dei dati.")
+        messages.error(request, "Error parsing the data.")
         return redirect("search_home")
 
     name = item_payload.get("name")
@@ -625,7 +640,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
 
                         api.start_download(media_item, season=season_num, episodes="*")
                     except Exception as e:
-                        error_msg = str(e) or "Errore sconosciuto"
+                        error_msg = str(e) or "Unknown error"
                         print(f"[Error] Download season {season_num}: {e}")
 
                         try:
@@ -649,7 +664,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
     # --- FULL SEASON DOWNLOAD ---
     elif download_type == "full_season":
         if not season_number:
-            messages.error(request, "Numero stagione mancante.")
+            messages.error(request, "Missing season number.")
             return redirect("search_home")
 
         _run_download_in_thread(
@@ -666,7 +681,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
     elif download_type == "selected_seasons":
         selected_seasons_raw = request.POST.get("selected_seasons", "")
         if not selected_seasons_raw:
-            messages.error(request, "Nessuna stagione selezionata.")
+            messages.error(request, "No season selected.")
             return redirect("search_home")
             
         selected_seasons = [s.strip() for s in selected_seasons_raw.split(",") if s.strip()]
@@ -713,7 +728,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
 
                         api.start_download(media_item, season=season_num, episodes="*")
                     except Exception as e:
-                        error_msg = str(e) or "Errore sconosciuto"
+                        error_msg = str(e) or "Unknown error"
                         print(f"[Error] Download season {season_num}: {e}")
 
                         try:
@@ -737,7 +752,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
     # --- SELECTED EPISODES DOWNLOAD ---
     else:
         if not season_number:
-            messages.error(request, "Numero stagione mancante.")
+            messages.error(request, "Missing season number.")
             return redirect("search_home")
 
         episode_param = selected_episodes.strip() if selected_episodes else None
@@ -745,7 +760,7 @@ def _handle_series_download(request: HttpRequest) -> HttpResponse:
         
         if not episode_param:
             print("[ERROR] episode_param is empty/None!")
-            messages.error(request, "Nessun episodio selezionato.")
+            messages.error(request, "No episode selected.")
             from django.urls import reverse
             url = reverse('series_detail') + f"?source_alias={source_alias}&item_payload={item_payload_raw}"
             return redirect(url)
@@ -927,11 +942,11 @@ def set_watchlist_polling_interval(request: HttpRequest) -> HttpResponse:
 
     allowed = {300, 900, 1800, 3600, 21600, 43200, 86400}
     if value not in allowed:
-        messages.error(request, "Intervallo non valido.")
+        messages.error(request, "Invalid interval.")
         return redirect("watchlist")
 
     os.environ["WATCHLIST_AUTO_INTERVAL_SECONDS"] = str(value)
-    messages.success(request, "Intervallo di controllo aggiornato.")
+    messages.success(request, "Check interval updated.")
     return redirect("watchlist")
 
 
@@ -944,7 +959,7 @@ def add_to_watchlist(request: HttpRequest) -> HttpResponse:
     search_site = request.POST.get("search_site")
     
     if not source_alias or not item_payload_raw:
-        messages.error(request, "Parametri mancanti per la watchlist.")
+        messages.error(request, "Missing parameters for the watchlist.")
         return redirect('search_home')
     
     try:
@@ -958,7 +973,7 @@ def add_to_watchlist(request: HttpRequest) -> HttpResponse:
         existing = WatchlistItem.objects.filter(name=name, source_alias=source_alias).first()
         
         if existing:
-            messages.info(request, f"'{name}' è già nella watchlist.")
+            messages.info(request, f"'{name}' is already in the watchlist.")
         else:
             item = WatchlistItem.objects.create(
                 name=name,
@@ -978,7 +993,7 @@ def add_to_watchlist(request: HttpRequest) -> HttpResponse:
             threading.Thread(target=_bg_update, daemon=True).start()
             
     except Exception as e:
-        messages.error(request, f"Errore durante l'aggiunta alla watchlist: {e}")
+        messages.error(request, f"Error adding to watchlist: {e}")
     
     # Redirect back to search results if we have the params
     if search_query and search_site:
@@ -995,9 +1010,9 @@ def remove_from_watchlist(request: HttpRequest, item_id: int) -> HttpResponse:
         item = WatchlistItem.objects.get(id=item_id)
         name = item.name
         item.delete()
-        messages.success(request, f"'{name}' rimosso dalla watchlist.")
+        messages.success(request, f"'{name}' removed from the watchlist.")
     except WatchlistItem.DoesNotExist:
-        messages.error(request, "Elemento non trovato.")
+        messages.error(request, "Item not found.")
     
     return redirect("watchlist")
 
@@ -1006,7 +1021,7 @@ def remove_from_watchlist(request: HttpRequest, item_id: int) -> HttpResponse:
 def clear_watchlist(request: HttpRequest) -> HttpResponse:
     """Remove all items from the watchlist."""
     WatchlistItem.objects.all().delete()
-    messages.success(request, "Watchlist svuotata.")
+    messages.success(request, "Watchlist cleared.")
     return redirect("watchlist")
 
 
@@ -1016,7 +1031,7 @@ def update_watchlist_auto(request: HttpRequest, item_id: int) -> HttpResponse:
     try:
         item = WatchlistItem.objects.get(id=item_id)
     except WatchlistItem.DoesNotExist:
-        messages.error(request, "Elemento non trovato.")
+        messages.error(request, "Item not found.")
         return redirect("watchlist")
 
     if item.is_movie:
@@ -1033,7 +1048,7 @@ def update_watchlist_auto(request: HttpRequest, item_id: int) -> HttpResponse:
                     "auto_last_downloaded_at",
                 ]
             )
-        messages.error(request, "Auto-download non disponibile per i film.")
+        messages.error(request, "Auto-download is not available for movies.")
         return redirect("watchlist")
 
     auto_enabled = request.POST.get("auto_enabled") == "on"
@@ -1046,7 +1061,7 @@ def update_watchlist_auto(request: HttpRequest, item_id: int) -> HttpResponse:
             auto_season = None
 
     if auto_enabled and not auto_season:
-        messages.error(request, "Seleziona una stagione per l'auto-download.")
+        messages.error(request, "Select a season for auto-download.")
         return redirect("watchlist")
 
     if item.auto_season != auto_season:
@@ -1060,7 +1075,7 @@ def update_watchlist_auto(request: HttpRequest, item_id: int) -> HttpResponse:
         item.auto_last_episode_count = 0
 
     item.save()
-    messages.success(request, "Impostazioni auto-download aggiornate.")
+    messages.success(request, "Auto-download settings updated.")
     return redirect("watchlist")
 
 
@@ -1128,9 +1143,9 @@ def update_watchlist_item(request: HttpRequest, item_id: int) -> HttpResponse:
     try:
         item = WatchlistItem.objects.get(id=item_id)
         threading.Thread(target=_update_single_item, args=(item,), daemon=True).start()
-        messages.info(request, f"Aggiornamento per '{item.name}' avviato in background.")
+        messages.info(request, f"Update for '{item.name}' started in background.")
     except WatchlistItem.DoesNotExist:
-        messages.error(request, "Elemento non trovato.")
+        messages.error(request, "Item not found.")
     
     return redirect("watchlist")
 
@@ -1145,7 +1160,7 @@ def update_all_watchlist(request: HttpRequest) -> HttpResponse:
             _update_single_item(item)
             
     threading.Thread(target=_update_all, daemon=True).start()
-    messages.info(request, "Aggiornamento globale avviato in background. Ricarica tra qualche istante.")
+    messages.info(request, "Global update started in background. Reload in a moment.")
     return redirect("watchlist")
 
 
@@ -1155,7 +1170,7 @@ def run_watchlist_auto_now(request: HttpRequest) -> HttpResponse:
     from .watchlist_auto import run_watchlist_auto_once
 
     threading.Thread(target=run_watchlist_auto_once, daemon=True).start()
-    messages.info(request, "Auto-download avviato subito in background.")
+    messages.info(request, "Auto-download started immediately in background.")
     return redirect("watchlist")
 
 
@@ -1248,7 +1263,7 @@ def upload_service_zip(request: HttpRequest) -> JsonResponse:
             # _base/ (the shared loader/manager code every service depends on)
             # and silently break every other service in the registry.
             if svc_name.startswith("_") or svc_name in {"base", "_base"}:
-                errors.append(f"'{svc_name}': nome riservato, non può essere installato come servizio")
+                errors.append(f"'{svc_name}': reserved name, cannot be installed as a service")
                 continue
 
             # Reject plugins that contain Python files with syntax errors.
@@ -2035,9 +2050,9 @@ def registry_status(request: HttpRequest) -> JsonResponse:
         "load_errors": gui_api_module.get_load_errors(),
         "db_dir": os.environ.get("DJANGO_DB_DIR", "<unset>"),
         "hint": (
-            "Se 'loaded_in_dropdown' contiene solo mostraguarda ma "
-            "'services_on_disk' ne contiene di più, guarda 'load_errors' "
-            "per vedere perché gli altri non caricano."
+            "If 'loaded_in_dropdown' contains fewer entries than "
+            "'services_on_disk', check 'load_errors' "
+            "to see why the others aren't loading."
         ),
     })
 
@@ -2115,6 +2130,25 @@ def check_updates(request: HttpRequest) -> JsonResponse:
     }
     _update_check_cache["ts"] = time.monotonic()
     _update_check_cache["result"] = result
+    return JsonResponse(result)
+
+
+@require_http_methods(["POST"])
+def trigger_velora_update(request: HttpRequest) -> JsonResponse:
+    """Check the Velora binary against the latest GitHub version and re-download it if outdated.
+
+    Unlike trigger_update() (app self-update), this never restarts the process:
+    Velora is a standalone binary invoked as a subprocess, so a fresh copy on
+    disk takes effect on the next download with no reload required.
+    """
+    from VibraVid.utils.upload.update import check_velora_update
+
+    try:
+        result = check_velora_update()
+    except Exception as exc:
+        logger.exception("Velora update failed")
+        return JsonResponse({"success": False, "message": str(exc)}, status=500)
+
     return JsonResponse(result)
 
 

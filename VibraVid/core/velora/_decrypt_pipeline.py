@@ -1,10 +1,12 @@
 # 01.04.25
 
 import re
+import gzip
 import queue
 import time
 import logging
 import threading
+from rich.markup import escape
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +16,7 @@ from VibraVid.utils.http_client import create_client
 from VibraVid.core.ui.bar_manager import DownloadBarManager, console
 from VibraVid.core.decryptor import Decryptor
 from VibraVid.core.muxing.helper.video import binary_merge_segments
+from VibraVid.core.manifest.stream import track_label
 
 from ..decryptor._segment_crypto import decrypt_aes128
 from .util.formatting import (
@@ -24,6 +27,8 @@ from .util.formatting import (
     fmt_dur as _fmt_dur,
 )
 from .util._stream_helpers import detect_seg_ext, merged_segment_ext, describe_key_for_log, collect_failed_segments
+from .util._subtitle_segments import merge_vtt_files
+from .util._verify import verify_decrypted_media
 
 
 logger = logging.getLogger("manual")
@@ -33,6 +38,41 @@ DECRYPT_WORKER_COUNT = max(1, config_manager.config.get_int("DOWNLOAD", "decrypt
 
 
 class DecryptPipelineMixin:
+    @staticmethod
+    def _decrypt_track_label(stream) -> str:
+        """Short human label for a track, used in decrypt-failure reporting."""
+        return track_label(stream)
+
+    def _verify_track_decrypted(self, out_path: "Path", stream) -> None:
+        """Verify a per-track merged+decrypted MP4/M4A carries no residual CENC boxes."""
+        try:
+            drm = getattr(stream, "drm", None)
+            if not (self.key and drm is not None and drm.is_encrypted()):
+                return
+            
+            if getattr(stream, "type", "") == "subtitle":
+                return
+            
+            if not out_path.exists() or out_path.stat().st_size <= 0:
+                return
+
+            label = self._decrypt_track_label(stream)
+            ok, message, still_encrypted = verify_decrypted_media(out_path)
+            if ok:
+                logger.info(f"Track decrypt verified OK [{label}] {out_path.name}: {message}")
+                return
+
+            if still_encrypted:
+                logger.error(f"Track still ENCRYPTED after decrypt [{label}] {out_path.name}: {message}")
+                short = message.split(";", 1)[0].strip()
+                console.print(escape(f"[!] Decryption FAILED for {label}: {short};"))
+                with self._decrypt_failures_lock:
+                    self.decrypt_failures.append({"label": label, "track": out_path.name, "message": message})
+            else:
+                logger.warning(f"Track decrypt verification inconclusive [{label}] {out_path.name}: {message}")
+        except Exception as exc:
+            logger.warning(f"Track decrypt verification skipped for {getattr(stream, 'type', '?')}: {exc}")
+
     def _download_stream_generic(self, dl_segs: List[Dict], stream, protocol: str, default_ext: str, bar_manager: DownloadBarManager, live_decryption: bool = False, seg_url_refresh_fn=None) -> None:
         task_key = self._stream_task_key(stream)
         total = len(dl_segs)
@@ -392,8 +432,14 @@ class DecryptPipelineMixin:
             return
 
         # Standard merge for HLS/DASH
+        is_plain_subtitle = (
+            stream is not None
+            and getattr(stream, "type", "") == "subtitle"
+            and not getattr(stream, "is_wvtt_mp4", False)
+        )
+
         merge_total_size = sum(p.stat().st_size for p in paths if p.exists())
-        logger.info(f"Binary merge starting -> {out_path.name} ({len(paths)} segs, {_fmt_size(merge_total_size)})")
+        logger.info(f"Merge starting -> {out_path.name} ({len(paths)} segs, {_fmt_size(merge_total_size)})")
         bar_manager.handle_progress_line({
             "task_key": task_key,
             "pct": 100,
@@ -402,18 +448,76 @@ class DecryptPipelineMixin:
             "speed": "Merge",
         })
 
-        binary_merge_segments(paths, out_path, merge_logger=logger)
-        logger.debug(f"Binary merge completed -> {out_path.name}")
+        def _sniff_vtt_content(raw: bytes) -> bool:
+            """Prova a leggere i primi byte come testo; se sono gzip, decomprime prima."""
+            try:
+                if raw[:2] == b"\x1f\x8b":  # magic number gzip
+                    raw = gzip.decompress(raw)[:64]
+                else:
+                    raw = raw[:64]
+                head = raw.decode("utf-8-sig", errors="replace").lstrip("\ufeff\ufffd").lstrip()
+                return head.startswith("WEBVTT")
+            except Exception:
+                return False
 
-        # Post-merge decryption for HLS/DASH (if needed)
-        is_plain_subtitle = (
-            stream is not None
-            and getattr(stream, "type", "") == "subtitle"
-            and not getattr(stream, "is_wvtt_mp4", False)
-        )
+        _is_webvtt_sub = False
+        _detect_reason = "no paths"
+
+        if is_plain_subtitle and paths:
+            _ext_says_vtt = out_path.suffix.lower() == ".vtt"
+            _content_says_vtt = False
+
+            for p in paths:
+                try:
+                    raw = p.read_bytes()[:512]
+                    if _sniff_vtt_content(raw):
+                        _content_says_vtt = True
+                        break
+                except Exception as exc:
+                    logger.warning(f"[merge_detect] could not sniff {getattr(p, 'name', p)}: {exc}")
+                    continue
+
+            _is_webvtt_sub = _ext_says_vtt or _content_says_vtt
+            _detect_reason = f"ext={_ext_says_vtt}, content={_content_says_vtt}"
+
+        logger.info(f"[merge_detect] {out_path.name}: is_webvtt_sub={_is_webvtt_sub} ({_detect_reason}), {len(paths)} segment(s)")
+
+        if _is_webvtt_sub:
+            merged = merge_vtt_files(paths, merge_logger=logger)
+            n_headers = merged.count("WEBVTT")
+            if n_headers != 1:
+                logger.warning(f"[merge_vtt] {out_path.name}: expected 1 WEBVTT header after merge, found {n_headers}")
+            out_path.write_text(merged, encoding="utf-8")
+            logger.debug(f"WebVTT cue-merge completed -> {out_path.name}")
+        else:
+            binary_merge_segments(paths, out_path, merge_logger=logger)
+            logger.debug(f"Binary merge completed -> {out_path.name}")
 
         stream_is_encrypted = stream.drm.method is not None
+
+        # Reset absolute fragment timestamps. Must run AFTER decryption
+        def _normalize_out_path() -> None:
+            if is_plain_subtitle or out_path.suffix.lower() not in (".mp4", ".m4s", ".m4a"):
+                return
+            
+            from VibraVid.core.muxing.helper.video import normalize_timestamps
+            norm_path = normalize_timestamps(out_path, logger)
+            if norm_path is None:
+                return
+            
+            try:
+                out_path.unlink(missing_ok=True)
+                norm_path.rename(out_path)
+            except OSError as exc:
+                logger.error(f"[normalize] rename-back failed, keeping un-normalized file: {exc}")
+                norm_path.unlink(missing_ok=True)
+
+        if not ((not live_decryption) and self.key and stream_is_encrypted):
+            _normalize_out_path()
+        
+        
         decrypted_ok = False
+        decrypt_already_reported = False
         if (not live_decryption) and self.key and stream_is_encrypted and out_path.exists() and out_path.stat().st_size > 0 and not is_plain_subtitle:
             post_merge_path = out_path.with_suffix(out_path.suffix + ".dec")
 
@@ -438,6 +542,7 @@ class DecryptPipelineMixin:
                     try:
                         out_path.unlink(missing_ok=True)
                         post_merge_path.rename(out_path)
+                        _normalize_out_path()
                     except Exception as exc:
                         logger.error(f"rename failed: {exc}")
                         if post_merge_path.exists():
@@ -446,10 +551,13 @@ class DecryptPipelineMixin:
                             except Exception:
                                 pass
                 else:
+                    decrypt_already_reported = True
                     kid_hint = ", ".join(stream.drm.get_all_kids()) if stream.drm else ""
                     track_label = f"{stream.type} {stream.resolution or stream.language or ''}".strip()
-                    console.print(f"[bold red][!] WARNING[/bold red] Decryption failed for [yellow]{track_label}[/yellow] (required KID(s): [magenta]{kid_hint}[/magenta]" if kid_hint else "")
                     logger.warning(f"Post-merge decryption failed for {out_path.name} (kid={kid_hint or 'unknown'})")
+                    bar_manager.handle_progress_line({"task_key": task_key, "speed": "Failed"})
+                    with self._decrypt_failures_lock:
+                        self.decrypt_failures.append({"label": track_label, "track": out_path.name, "message": f"required KID(s): {kid_hint or 'unknown'}"})
                     if post_merge_path.exists():
                         try:
                             post_merge_path.unlink()
@@ -461,10 +569,14 @@ class DecryptPipelineMixin:
 
         if out_path.exists() and out_path.stat().st_size > 0:
             logger.debug(f"{protocol.upper()} merged {len(paths):>4} segs -> {out_path.name} ({out_path.stat().st_size // 1024} KB)")
+            if not decrypt_already_reported:
+                self._verify_track_decrypted(out_path, stream)
 
             if decrypted_ok:
                 # Finalize the bar at 100%, keeping segment/size/status as-is.
                 bar_manager.handle_progress_line({"task_key": task_key, "pct": 100})
+            elif decrypt_already_reported:
+                _progress(total, total, out_path.stat().st_size, 0.0, speed_label="Failed")
             else:
                 _progress(total, total, out_path.stat().st_size, 0.0, speed_label="Merge")
         else:

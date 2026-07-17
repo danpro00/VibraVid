@@ -42,3 +42,12 @@ class SearchappConfig(AppConfig):
             views.set_max_download_slots(int(cfg.get("max_concurrent_downloads", 1) or 1))
         except Exception as exc:
             print(f"[Downloads] Failed to set max concurrent slots: {exc}")
+
+        # Check the Velora binary for updates (network call, so run off the main thread)
+        try:
+            import threading
+            from VibraVid.utils.upload.update import check_velora_update
+
+            threading.Thread(target=check_velora_update, daemon=True).start()
+        except Exception as exc:
+            print(f"[Velora] Failed to start update check: {exc}")

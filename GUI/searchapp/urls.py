@@ -49,4 +49,5 @@ urlpatterns = [
     # In-app update
     path("api/version/check/", views.check_updates, name="check_updates"),
     path("api/version/update/", views.trigger_update, name="trigger_update"),
+    path("api/velora/update/", views.trigger_velora_update, name="trigger_velora_update"),
 ]

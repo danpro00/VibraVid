@@ -17,15 +17,18 @@ class EurostreamingAPI(BaseStreamingAPI):
         self._search_fn = None
 
     def _get_search_fn(self):
+        """Lazy-load the search function from the services package."""
         if self._search_fn is None:
             module = importlib.import_module(f"VibraVid.{get_folder_name()}.{self.site_name}")
             self._search_fn = getattr(module, "search")
         return self._search_fn
 
     def _get_base_url(self) -> str:
+        """Get the base URL for Eurostreaming from the configuration."""
         return config_manager.domain.get('eurostreaming', 'full_url').rstrip('/')
 
     def search(self, query: str) -> List[Entries]:
+        """Search for content on Eurostreaming and return a list of Entries."""
         search_fn = self._get_search_fn()
         database = search_fn(query, get_onlyDatabase=True)
 
@@ -48,6 +51,7 @@ class EurostreamingAPI(BaseStreamingAPI):
         return results
 
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
+        """Get seasons and episodes for a Eurostreaming series."""
         scrape_serie = self.get_cached_scraper(media_item)
         if not scrape_serie:
             scrape_serie = GetSerieInfo(media_item.name, self._get_base_url())
@@ -87,6 +91,7 @@ class EurostreamingAPI(BaseStreamingAPI):
         return seasons if seasons else None
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
+        """Start downloading from Eurostreaming."""
         search_fn = self._get_search_fn()
 
         selections = None

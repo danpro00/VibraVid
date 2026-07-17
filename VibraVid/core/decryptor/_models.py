@@ -41,7 +41,7 @@ class EncryptionInfo:
     encrypted: bool = False
     scheme: Optional[str] = None                        # e.g. "cenc", "cbcs"
     kid: Optional[str] = None                           # default KID hex string
-    pssh_b64: Optional[str] = None                      # selected PSSH system-id (populated by _finalize)
+    pssh_b64: Optional[str] = None                      # base64 PSSH box, synthesized from KID if needed (populated by _finalize)
     video_codec: Optional[str] = None                   # e.g. "H.264", "HEVC"
     encryption_method: Optional[str] = None             # e.g. "SAMPLE_AES"
     track_ids: Optional[list[str]] = None               # list of track IDs (if available)
@@ -61,13 +61,20 @@ def _find_all(atoms, box_type: str) -> list:
     return [a for a in _walk(atoms) if a.type == box_type]
 
 
-def _select_preferred_pssh(pssh_boxes: list[dict]) -> Optional[str]:
-    """Return the system-id of the preferred PSSH box (Widevine first)."""
+def _select_preferred_pssh(pssh_boxes: list[dict], kid: Optional[str]) -> Optional[str]:
+    """Return a real base64 PSSH box for the preferred system (Widevine first)."""
     if not pssh_boxes:
         return None
-    for box in pssh_boxes:
-        if box.get("system_id", "").replace(" ", "").lower() == WIDEVINE_SYSTEM_ID:
-            return box.get("system_id")
+
+    has_widevine = any(box.get("system_id", "").replace(" ", "").lower() == WIDEVINE_SYSTEM_ID for box in pssh_boxes)
+    if has_widevine and kid:
+        try:
+            return _DRMSystems.build_widevine_pssh_from_kid(kid)
+        except Exception as exc:
+            logger.debug(f"Widevine PSSH synthesis failed for KID {kid}: {exc}")
+
+    if has_widevine:
+        return WIDEVINE_SYSTEM_ID
     return pssh_boxes[0].get("system_id")
 
 
@@ -145,7 +152,7 @@ def detect_encryption_info(file_path: str) -> EncryptionInfo:
     if not info.encrypted:
         return EncryptionInfo()
 
-    info.pssh_b64 = _select_preferred_pssh(info.pssh_boxes)
+    info.pssh_b64 = _select_preferred_pssh(info.pssh_boxes, info.kid)
     return info
 
 

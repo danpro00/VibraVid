@@ -31,15 +31,7 @@ class AnimeUnityAPI(BaseStreamingAPI):
         return self._search_fn
     
     def search(self, query: str) -> List[Entries]:
-        """
-        Search for content on AnimeUnity.
-        
-        Args:
-            query: Search term
-            
-        Returns:
-            List of Entries objects
-        """
+        """Search for content on AnimeUnity."""
         search_fn = self._get_search_fn()
         database = search_fn(query, get_onlyDatabase=True)
         
@@ -65,16 +57,8 @@ class AnimeUnityAPI(BaseStreamingAPI):
         return results
     
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        """
-        Get seasons and episodes for an AnimeUnity series.
-        Note: AnimeUnity typically has single season anime.
-        
-        Args:
-            media_item: Entries to get metadata for
-            
-        Returns:
-            List of Season objects (usually one season), or None if not a series
-        """
+        """Get seasons and episodes for an AnimeUnity series."""
+
         # Check if it's a movie or OVA
         if media_item.is_movie:
             return None
@@ -103,17 +87,7 @@ class AnimeUnityAPI(BaseStreamingAPI):
         return [season]
             
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        """
-        Start downloading from AnimeUnity.
-        
-        Args:
-            media_item: Entries to download
-            season: Season number (typically 1 for anime)
-            episodes: Episode selection
-            
-        Returns:
-            True if download started successfully
-        """
+        """Start downloading from AnimeUnity."""
         search_fn = self._get_search_fn()
         media_type = str(media_item.type or "").lower()
         is_series_like = media_type in {"tv", "serie", "series", "ova", "ona", "show", "tv short"}

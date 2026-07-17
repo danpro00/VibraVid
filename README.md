@@ -270,6 +270,8 @@ All settings live in `config.json`. The sections below cover each configuration 
 | `%(language)` | Audio languages |
 | `%(video_codec)` | Video codec |
 | `%(audio_codec)` | Audio codec |
+| `%(audio_flags)` | Audio track flags, e.g. `DEFAULT` |
+| `%(sub_flags)` | Subtitle track flags, e.g. `CC-SDH-FORCED` |
 | `%(original_title)` | Original-language title (requires TMDB API key) |
 | `%(original_language)` | Original language code, e.g. `ja` (requires TMDB API key) |
 | `%(tmdb_id)` | TMDB ID (requires TMDB API key) |
@@ -301,6 +303,8 @@ S%(season:02d)/     ->  season folder   S01/
 | `%(language)` | Audio languages |
 | `%(video_codec)` | Video codec |
 | `%(audio_codec)` | Audio codec |
+| `%(audio_flags)` | Audio track flags, e.g. `DEFAULT` |
+| `%(sub_flags)` | Subtitle track flags, e.g. `CC-SDH-FORCED` |
 | `%(original_title)` | Original-language title (requires TMDB API key) |
 | `%(original_language)` | Original language code, e.g. `ja` (requires TMDB API key) |
 | `%(tmdb_id)` | TMDB ID (requires TMDB API key) |
@@ -367,6 +371,9 @@ Use `select_video`, `select_audio`, and `select_subtitle` to control which track
 | `"1080,H265"` | Height + codec constraint |
 | `"1080\|best"` | Height with fallback to best |
 | `"1080\|best,H265"` | Height + codec with fallback to best |
+| `"bitrate=8000:for=best"` | Bitrate cap (kbps) — best within range. Useful when the highest-bitrate rendition isn't decryptable with your DRM device/security level |
+| `"bitrate=1000-8000:for=best"` | Bitrate range (kbps) — best within range |
+| `"bitrate=1000-:for=best"` | Bitrate floor only (no upper bound) — best within range |
 | `"false"` | Skip video |
 
 **Audio (`select_audio`):**
@@ -383,6 +390,7 @@ Use `select_video`, `select_audio`, and `select_subtitle` to control which track
 | `"ita,MP4A"` | Language + codec | DROP if combination not found |
 | `"ita\|best"` | Language with fallback to best | Fallback to best |
 | `"ita\|best,AAC"` | Language + codec with fallback | Fallback to best |
+| `"bitrate=64-192:for=best"` | Bitrate range (kbps) — best within range | Ignores range if no match |
 | `"false"` | Skip audio | — |
 
 **Subtitle (`select_subtitle`):**
@@ -466,7 +474,9 @@ See `VibraVid/core/processors/helper/ex_sub.py` for conversion logic.
     "proxy": {
       "http": "http://localhost:8888",
       "https": "http://localhost:8888"
-    }
+    },
+    "flaresolverr_url": "http://localhost:8191",
+    "bypasser_url": "http://localhost:8192"
   }
 }
 ```
@@ -479,6 +489,8 @@ See `VibraVid/core/processors/helper/ex_sub.py` for conversion logic.
 | `proxy_scope` | `scrap+down` | Where the proxy is applied: `scrap`, `down`, or `scrap+down` (see below) |
 | `proxy.http` | — | Proxy URL for HTTP targets |
 | `proxy.https` | — | Proxy URL for HTTPS targets |
+| `flaresolverr_url` | `http://localhost:8191` | FlareSolverr endpoint used by the **lucida** music service to solve lucida.to's Cloudflare challenge. Keep the localhost default for local runs (sidecar on the same host); in Docker the `FLARESOLVERR_URL` env in `docker-compose.yml` overrides it to the `flaresolverr` service. |
+| `bypasser_url` | `http://localhost:8192` | Endpoint of the **bypasser** sidecar that solves monochrome.tf's Cloudflare Turnstile widget for the **monochrome** Amazon Music download. **Required** — there is no in-process fallback. Keep the localhost default for local runs; in Docker the `BYPASSER_URL` env in `docker-compose.yml` overrides it to the `bypasser` service. |
 
 > **Proxy scope** — when `use_proxy` is `true`, `proxy_scope` decides *which* traffic goes through the proxy:
 > | Value | Effect |

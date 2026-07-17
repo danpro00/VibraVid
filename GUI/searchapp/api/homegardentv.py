@@ -15,3 +15,4 @@ class HomeGardenTVAPI(GenericStreamingAPI):
 
     def _build_scraper(self, media_item: Entries):
         return GetSerieInfo(media_item.url)
+

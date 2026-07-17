@@ -49,7 +49,7 @@
         "param_song_ffmpeg": [],
         "audio_order": [],
         "subtitle_order": [],
-        "subtitle_disposition_language": "ita_forced",
+        "subtitle_disposition_language": "it-it_forced",
         "merge_audio": true,
         "merge_subtitle": true,
         "force_subtitle": "auto",
@@ -64,7 +64,9 @@
         "proxy": {
             "http": "http://localhost:8888",
             "https": "http://localhost:8888"
-        }
+        },
+        "flaresolverr_url": "http://localhost:8191",
+        "bypasser_url": "http://localhost:8192"
     },
     "HOOKS": {
         "pre_run": [],

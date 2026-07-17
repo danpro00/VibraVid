@@ -17,6 +17,7 @@ from VibraVid.utils import config_manager
 from VibraVid.utils.http_client import create_client, get_headers
 from VibraVid.core.manifest.stream import DRMInfo, Stream, DRMType
 from VibraVid.core.utils.language import resolve_locale
+from VibraVid.core.utils.codec import infer_video_range
 from VibraVid.core.manifest._utils import calc_base_url, save_raw_manifest
 from VibraVid.core.drm.system import _DRMSystems
 
@@ -50,20 +51,8 @@ def _make_rendition_id(group_id: str, language: str, name: str) -> str:
     return ":".join(parts) if parts else "unknown"
 
 
-_HDR_CODEC_PATTERNS = {
-    "dvh1": "DV", "dvhe": "DV",
-    "hvc1.2": "HDR10", "hev1.2": "HDR10",
-    "hvc1.8": "HDR10", "hev1.8": "HDR10",
-    "av01.1": "HDR10", "av01.2": "HDR10",
-}
-
-
 def _infer_video_range_from_codecs(codecs: str) -> str:
-    c = (codecs or "").lower()
-    for prefix, vrange in _HDR_CODEC_PATTERNS.items():
-        if prefix in c:
-            return vrange
-    return ""
+    return infer_video_range(codecs)
 
 
 class HLSParser:
@@ -190,10 +179,6 @@ class HLSParser:
         self._resolve_drm(streams, master_drm)
 
         for stream in streams:
-            # Populate stream.encryption_method from DRMInfo if not already set
-            if not stream.encryption_method and stream.drm and stream.drm.method:
-                stream.encryption_method = stream.drm.method
-            
             # Determine if stream supports live per-segment decryption
             # SAMPLE-AES/CBCS HLS segments only have 'moof' box, not 'moov'
             # Therefore they cannot be decrypted individually - must merge first
@@ -413,13 +398,10 @@ class HLSParser:
                 t = token.strip().lower()
                 if not t:
                     continue
-                
-                if "widevine" in t or _DRMSystems.WIDEVINE in t.replace("-", ""):
-                    info.add_advertised_type(DRMType.WIDEVINE)
-                elif "playready" in t or "com.microsoft" in t:
-                    info.add_advertised_type(DRMType.PLAYREADY)
-                elif "streamingkeydelivery" in t or "fairplay" in t or "com.apple" in t:
-                    info.add_advertised_type(DRMType.FAIRPLAY)
+
+                detected = DRMType.from_scheme(t)
+                if detected != DRMType.UNKNOWN:
+                    info.add_advertised_type(detected)
 
         aes_m = re.search(r'#EXT-X-(?:SESSION-)?KEY:.*?METHOD=(AES[^,"\s]+)', content, re.IGNORECASE)
         if aes_m:
@@ -504,24 +486,9 @@ class HLSParser:
         return info
 
     def get_drm_info(self) -> Dict:
-        result = {"widevine": [], "playready": [], "fairplay": []}
         if not self.raw_content:
-            return result
-        
-        info = self._parse_drm_tags(self.raw_content)
-        pssh_wv = info.get_pssh_for(DRMType.WIDEVINE)
-        if pssh_wv:
-            result["widevine"].append({"pssh": pssh_wv, "type": "Widevine", "kid": info.kid})
-    
-        pssh_pr = info.get_pssh_for(DRMType.PLAYREADY)
-        if pssh_pr:
-            result["playready"].append({"pssh": pssh_pr, "type": "PlayReady", "kid": info.kid})
-
-        pssh_fp = info.get_pssh_for(DRMType.FAIRPLAY)
-        if pssh_fp:
-            result["fairplay"].append({"uri": pssh_fp, "type": "FairPlay", "kid": info.kid})
-            
-        return result
+            return {"widevine": [], "playready": [], "fairplay": []}
+        return self._parse_drm_tags(self.raw_content).to_dict()
 
     @staticmethod
     def _attr(line: str, key: str, default: str = "") -> str:

@@ -4,6 +4,21 @@ import re
 import struct
 import base64
 
+
+def normalize_kid(kid) -> str:
+    """Canonical KID/KEY hex form: dash-stripped, whitespace-trimmed, lowercase."""
+    return str(kid if kid is not None else "").replace("-", "").strip().lower()
+
+
+def accumulate_content_key(keys_list: list, extracted_kids: set, kid_raw, key_raw) -> None:
+    """Format a CDM key as ``"kid:key"""
+    kid = normalize_kid(kid_raw)
+    formatted = f"{kid}:{normalize_kid(key_raw)}"
+    if formatted not in keys_list:
+        keys_list.append(formatted)
+        extracted_kids.add(kid)
+
+
 _SYSTEMS_DATA = {
     "WIDEVINE":    ("edef8ba979d64acea3c827dcd51d21ed", "Widevine", "WV"),
     "PLAYREADY":   ("9a04f07998404286ab92e65be0885f95", "PlayReady", "PR"),
@@ -47,7 +62,7 @@ class _DRMSystems(dict):
     @staticmethod
     def to_system_id(hex_id: str) -> str:
         """Convert 32-char hex to dashed UUID format (8-4-4-4-12)."""
-        h = hex_id.replace("-", "").lower()
+        h = normalize_kid(hex_id)
         if len(h) != 32:
             raise ValueError(f"Expected 32 hex chars, got {len(h)}: {hex_id!r}")
         return f"{h[0:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
@@ -117,7 +132,7 @@ class _DRMSystems(dict):
     @staticmethod
     def build_widevine_pssh_from_kid(kid_hex: str) -> str:
         """Synthesize minimal Widevine v0 PSSH box from KID hex."""
-        kid = (kid_hex or "").replace("-", "").lower()
+        kid = normalize_kid(kid_hex)
         if len(kid) != 32:
             raise ValueError(f"KID must be 32 hex chars, got {len(kid)}: {kid_hex!r}")
 
@@ -156,7 +171,25 @@ class DRMType:
     @classmethod
     def from_hex(cls, hex_id: str) -> str:
         """Return short code for bare hex system ID, or UNKNOWN."""
-        return cls.HEX_TO_CODE.get(hex_id.replace("-", "").lower(), cls.UNKNOWN)
+        return cls.HEX_TO_CODE.get(normalize_kid(hex_id), cls.UNKNOWN)
+
+    @classmethod
+    def from_scheme(cls, scheme) -> str:
+        """Classify a DRM system from any scheme string"""
+        s = (scheme or "").lower()
+        if not s:
+            return cls.UNKNOWN
+        
+        sd = s.replace("-", "")
+        if "widevine" in s or "edef8ba9" in sd:
+            return cls.WIDEVINE
+        
+        if "playready" in s or "com.microsoft" in s or "9a04f079" in sd:
+            return cls.PLAYREADY
+        
+        if "fairplay" in s or "com.apple" in s or "streamingkeydelivery" in s or "94ce86fb" in sd:
+            return cls.FAIRPLAY
+        return cls.UNKNOWN
 
     @classmethod
     def display(cls, code: str) -> str:

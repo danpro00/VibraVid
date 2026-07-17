@@ -118,9 +118,7 @@ class AmazonMusicAPI(BaseStreamingAPI):
             return None
 
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        """
-        Start a download for a selected track or album by delegating to the service.
-        """
+        """Start a download for a selected track or album by delegating to the service."""
         search_fn = self._get_search_fn()
 
         selections = {}

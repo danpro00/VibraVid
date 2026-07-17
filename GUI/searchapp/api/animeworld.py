@@ -31,15 +31,7 @@ class AnimeWorldAPI(BaseStreamingAPI):
         return self._search_fn
     
     def search(self, query: str) -> List[Entries]:
-        """
-        Search for anime content on AnimeWorld.
-        
-        Args:
-            query: Search term
-            
-        Returns:
-            List of Entries objects
-        """
+        """Search for anime content on AnimeWorld."""
         search_fn = self._get_search_fn()
         database = search_fn(query, get_onlyDatabase=True)
         
@@ -66,15 +58,7 @@ class AnimeWorldAPI(BaseStreamingAPI):
         return results
     
     def get_series_metadata(self, media_item: Entries) -> Optional[List[Season]]:
-        """
-        Get episodes for an AnimeWorld series.
-        
-        Args:
-            media_item: Entries to get metadata for
-            
-        Returns:
-            List with a single Season containing all episodes, or None if it's a movie
-        """
+        """Get episodes for an AnimeWorld series."""
         if media_item.type == 'Movie':
             return None
         
@@ -105,17 +89,7 @@ class AnimeWorldAPI(BaseStreamingAPI):
         return [season]
     
     def start_download(self, media_item: Entries, season: Optional[str] = None, episodes: Optional[str] = None) -> bool:
-        """
-        Start downloading from AnimeWorld.
-        
-        Args:
-            media_item: Entries to download
-            season: Season number (typically not used for anime, defaults to None)
-            episodes: Episode selection
-            
-        Returns:
-            True if download started successfully
-        """
+        """Start downloading from AnimeWorld."""
         search_fn = self._get_search_fn()
         
         # Prepare selections

@@ -109,6 +109,18 @@ class GetSerieInfo:
         """Return True if this title is a TS/CAM/Cinema release."""
         return self.get_quality() in {"TS", "CAM", "CINEMA"}
 
+    def get_tmdb_id(self) -> int:
+        """Return the provider's own TMDB id for this title, if it supplies one."""
+        if not getattr(self, 'title_info', None):
+            try:
+                self.collect_info_title()
+            except Exception:
+                return None
+
+        title_node = getattr(self, 'title_info', None) or {}
+        tmdb_id = title_node.get("tmdb_id")
+        return int(tmdb_id) if tmdb_id else None
+
     def collect_info_season(self, number_season: int) -> None:
         """
         Retrieve episode information for a specific season.

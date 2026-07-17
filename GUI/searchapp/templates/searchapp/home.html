@@ -1,7 +1,7 @@
 {% extends "searchapp/base.html" %}
 {% load static %}
 
-{% block title %}Cerca e Scarica{% endblock %}
+{% block title %}Search & Download{% endblock %}
 
 {% block content %}
 
@@ -22,7 +22,7 @@
             name="query" 
             id="id_query" 
             required 
-            placeholder="Es: Breaking Bad, The Matrix, Stranger Things..." 
+            placeholder="e.g. Breaking Bad, The Matrix, Stranger Things..."
             class="w-full h-16 bg-black/50 border-2 border-gray-800 rounded-xl px-6 text-white text-lg placeholder-gray-600 focus:border-red-600 focus:outline-none focus:ring-4 focus:ring-red-600/20 transition-all"
             autofocus
           >
@@ -48,7 +48,7 @@
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
           </svg>
-          Cerca
+          Search
         </button>
       </div>
     </form>

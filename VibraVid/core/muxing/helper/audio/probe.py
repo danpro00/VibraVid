@@ -4,16 +4,19 @@ import os
 import json
 import logging
 import subprocess
+from typing import Optional
 
 from rich.console import Console
 
 from VibraVid.setup import get_ffprobe_path
+from VibraVid.core.muxing.helper._ffprobe_cache import ffprobe_cached
 
 
 console = Console()
 logger = logging.getLogger(__name__)
 
 
+@ffprobe_cached
 def has_audio(file_path: str) -> bool:
     """Check if a media file has an audio stream using FFprobe."""
     try:
@@ -39,6 +42,7 @@ def has_audio(file_path: str) -> bool:
         return False
 
 
+@ffprobe_cached
 def get_video_duration(file_path: str, file_type: str = "file") -> float:
     """Get the duration of a media file (video or audio)."""
     if not os.path.exists(file_path):
@@ -49,7 +53,13 @@ def get_video_duration(file_path: str, file_type: str = "file") -> float:
         logger.error(f"[get_video_duration] File is empty: {file_path}")
         return None
 
-    ffprobe_cmd = [get_ffprobe_path(), '-v', 'error', '-show_format', '-print_format', 'json', file_path]
+    ffprobe_cmd = [
+        get_ffprobe_path(), '-v', 'error',
+        '-probesize', '200M', '-analyzeduration', '200M',
+        '-show_format',
+        '-show_entries', 'stream=codec_type,codec_name,avg_frame_rate,sample_rate,nb_frames',
+        '-print_format', 'json', file_path,
+    ]
     with subprocess.Popen(ffprobe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) as proc:
         stdout, stderr = proc.communicate()
 
@@ -57,28 +67,76 @@ def get_video_duration(file_path: str, file_type: str = "file") -> float:
             logger.error(f"Error get_video_duration: {stderr}")
             return None
 
-        # Parse JSON output
         probe_result = json.loads(stdout)
 
-        # Extract duration from the media information
         try:
-            return float(probe_result['format']['duration'])
+            dur = float(probe_result['format']['duration'])
         except Exception:
             logger.error(f"Error extracting duration from ffprobe output: {probe_result}")
             return 1
 
+        size = os.path.getsize(file_path)
+        if dur > 0 and size > 0:
+            bitrate = (size * 8) / dur
+            if bitrate < 1000:
+                logger.warning(f"[get_video_duration] duration {dur:.1f}s implausible for {size} byte file (bitrate {bitrate:.0f} bit/s) — treating as corrupt")
+                return None
+
+        if dur > 0:
+            return dur
+
+        # No usable container duration -- fall back to a frame-count-based estimate.
+        streams = probe_result.get('streams', [])
+        est = _estimate_duration_from_frames(streams)
+        if est is not None and est > 0:
+            logger.warning(f"[get_video_duration] no usable container duration -- using frame estimate {est:.1f}s")
+            return est
+
+        return dur
+
+
+def _estimate_duration_from_frames(streams: list) -> Optional[float]:
+    """Estimate media duration from stream frame metadata, independent of the (possibly corrupt) container duration field."""
+    for stream in streams:
+        ctype = stream.get('codec_type')
+        nb = stream.get('nb_frames')
+        if not nb:
+            continue
+        try:
+            n = int(nb)
+        except (TypeError, ValueError):
+            continue
+        if n <= 0:
+            continue
+
+        if ctype == 'audio':
+            sr = int(stream.get('sample_rate', 0) or 0)
+            if sr <= 0:
+                continue
+   
+            samples_per_frame = 1536 if stream.get('codec_name') in ('eac3', 'ac3') else 1024
+            return (n * samples_per_frame) / sr
+
+        if ctype == 'video':
+            stream_dur = stream.get('duration')
+            if stream_dur and float(stream_dur) > 0:
+                return float(stream_dur)
+            
+            # Last resort: frame_count / fps, only if both are known.
+            fr = stream.get('avg_frame_rate', '0/1')
+            try:
+                num, den = str(fr).split('/')
+                fps = float(num) / float(den) if float(den) else 0.0
+            except (ValueError, ZeroDivisionError):
+                fps = 0.0
+            if fps > 0:
+                return n / fps
+
+    return None
+
 
 def check_duration_v_a(video_path, audio_path, tolerance=1.0):
-    """
-    Check if the duration of the video and audio matches.
-
-    Returns:
-        - tuple: (bool, float, float, float) ->
-            - Bool: True if the duration of the video and audio matches within tolerance
-            - Float: Difference in duration
-            - Float: Video duration
-            - Float: Audio duration
-    """
+    """Check if the duration of the video and audio matches."""
     video_duration = get_video_duration(video_path, file_type="video")
     audio_duration = get_video_duration(audio_path, file_type="audio")
 

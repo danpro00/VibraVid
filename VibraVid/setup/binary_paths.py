@@ -191,7 +191,9 @@ class BinaryPaths:
                         pass
                     return None
 
-        return None
+            available = paths_json.get(key, [])
+            logger.error(f"Binary {binary_name} not listed in manifest for key {key}; available entries: {available}")
+            return None
 
 
 binary_paths = BinaryPaths()

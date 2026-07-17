@@ -32,7 +32,7 @@
         <span class="relative inline-flex rounded-full h-full w-full bg-red-500"></span>
       </div>
       <h2 class="text-2xl font-bold text-white">
-        Download Attivi
+        Active Downloads
       </h2>
     </div>
 
@@ -47,7 +47,7 @@
           </svg>
         </div>
         <p class="text-gray-500 font-semibold text-lg">
-          Nessun download in corso
+          No downloads in progress
         </p>
       </div>
     </div>
@@ -60,7 +60,7 @@
         <span class="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-70"></span>
       </div>
       <h2 class="text-2xl font-bold text-white">
-        Download Programmati
+        Scheduled Downloads
       </h2>
     </div>
 
@@ -72,7 +72,7 @@
           </svg>
         </div>
         <p class="text-gray-500 font-semibold text-lg">
-          Nessun download programmato
+          No scheduled downloads
         </p>
       </div>
     </div>
@@ -83,19 +83,19 @@
     <!-- Section Header -->
     <div class="flex items-center justify-between mb-6">
       <h2 class="text-2xl font-bold text-white">
-        Cronologia
+        History
       </h2>
       <button
         id="clear-history-btn"
         onclick="window.clearHistory()"
         class="px-3 py-2 sm:px-4 sm:py-2 bg-red-600/10 hover:bg-red-600 active:bg-red-700 text-red-500 hover:text-white border border-red-600/30 rounded-lg text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 sm:gap-2 min-h-[36px]"
-        title="Cancella tutta la cronologia"
+        title="Clear all history"
       >
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
         </svg>
-        <span class="hidden sm:inline">Pulisci cronologia</span>
-        <span class="sm:hidden">Pulisci</span>
+        <span class="hidden sm:inline">Clear history</span>
+        <span class="sm:hidden">Clear</span>
       </button>
     </div>
 
@@ -106,13 +106,13 @@
           <thead>
             <tr class="border-b border-gray-800">
               <th class="px-6 py-5 text-left text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Contenuto
+                Content
               </th>
               <th class="px-6 py-5 text-center text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Stato
+                Status
               </th>
               <th class="px-6 py-5 text-right text-xs font-bold text-gray-400 uppercase tracking-wider">
-                Completato
+                Completed
               </th>
             </tr>
           </thead>
@@ -123,7 +123,7 @@
                   <svg class="w-8 h-8 text-gray-700 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                   </svg>
-                  <span class="font-medium text-base">Caricamento cronologia...</span>
+                  <span class="font-medium text-base">Loading history...</span>
                 </div>
               </td>
             </tr>
@@ -150,15 +150,15 @@ function formatTime(seconds) {
 function formatDate(timestamp) {
   const ts = Number(timestamp);
   if (!Number.isFinite(ts) || ts <= 0) {
-    return 'N/D';
+    return 'N/A';
   }
 
   const date = new Date(ts * 1000);
   if (Number.isNaN(date.getTime())) {
-    return 'N/D';
+    return 'N/A';
   }
 
-  return date.toLocaleString('it-IT', {
+  return date.toLocaleString('en-GB', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -203,9 +203,9 @@ window.CLEAR_HISTORY_URL = "{% url 'clear_download_history' %}";
 
 function normalizeTypeLabel(type, title = '') {
   const raw = String(type || '').toLowerCase();
-  if (raw === 'serie' || raw === 'tv' || raw === 'series') return 'Serie';
-  if (raw === 'film' || raw === 'movie') return 'Film';
-  return title && title.match(/[SE]\d+/i) ? 'Serie' : 'Film';
+  if (raw === 'serie' || raw === 'tv' || raw === 'series') return 'Series';
+  if (raw === 'film' || raw === 'movie') return 'Movie';
+  return title && title.match(/[SE]\d+/i) ? 'Series' : 'Movie';
 }
 
 async function fetchDownloadData() {
@@ -278,14 +278,14 @@ function renderScheduledDownloads(downloads) {
     const typeLabel = normalizeTypeLabel(dl.type, dl.title);
     const scheduleDate = dl.scheduled_at ? formatDate(dl.scheduled_at) : '';
     const seasonLabel = dl.season ? `S${escapeHtml(String(dl.season))}` : '';
-    const episodesLabel = dl.episodes && dl.episodes !== '*' ? `E${escapeHtml(String(dl.episodes))}` : (dl.episodes === '*' ? 'Tutti gli episodi' : '');
+    const episodesLabel = dl.episodes && dl.episodes !== '*' ? `E${escapeHtml(String(dl.episodes))}` : (dl.episodes === '*' ? 'All episodes' : '');
     const details = [seasonLabel, episodesLabel].filter(Boolean).join(' • ');
 
     card.innerHTML = `
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div class="min-w-0">
           <div class="flex items-center gap-2 mb-2">
-            <span class="px-2.5 py-1 bg-amber-500/20 text-amber-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded">In attesa</span>
+            <span class="px-2.5 py-1 bg-amber-500/20 text-amber-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded">Pending</span>
             <span class="px-2.5 py-1 bg-white/10 text-gray-300 text-[10px] sm:text-xs font-semibold rounded">${escapeHtml(typeLabel)}</span>
             <span class="px-2.5 py-1 bg-white/10 text-gray-400 text-[10px] sm:text-xs rounded">${escapeHtml(dl.site || '')}</span>
           </div>
@@ -294,9 +294,9 @@ function renderScheduledDownloads(downloads) {
         </div>
         <div class="flex items-center gap-3">
           <div class="text-xs text-gray-500 font-mono whitespace-nowrap">${scheduleDate}</div>
-          <button onclick="window.killSeriesQueue('${dl.id}')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600 active:bg-red-700 text-red-500 hover:text-white border border-red-600/30 rounded text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 min-h-[34px]" title="Annulla questo download programmato">
+          <button onclick="window.killSeriesQueue('${dl.id}')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600 active:bg-red-700 text-red-500 hover:text-white border border-red-600/30 rounded text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1.5 min-h-[34px]" title="Cancel this scheduled download">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            Cancella
+            Cancel
           </button>
         </div>
       </div>
@@ -309,7 +309,7 @@ function generateDownloadCardHTML(dl) {
   const hasTasks = Object.keys(dl.tasks || {}).length > 0;
   
   const typeLabel = normalizeTypeLabel(dl.type, dl.title);
-  const isSeries = typeLabel === 'Serie';
+  const isSeries = typeLabel === 'Series';
   const elapsedSec = Math.floor(Date.now() / 1000 - (dl.start_time || 0));
   const timeStr = formatTime(elapsedSec);
 
@@ -330,15 +330,15 @@ function generateDownloadCardHTML(dl) {
           <span class="px-2.5 py-1 sm:px-3 bg-red-600 text-white text-[10px] sm:text-xs font-bold uppercase tracking-wider rounded">${escapeHtml(typeLabel)}</span>
           <span class="px-2.5 py-1 sm:px-3 bg-white/10 backdrop-blur-sm text-gray-300 text-[10px] sm:text-xs font-semibold rounded">${escapeHtml(dl.site)}</span>
           ${dl.series_name ? `<span class="max-w-full sm:max-w-[260px] px-2.5 py-1 sm:px-3 bg-blue-600/20 border border-blue-500/30 text-blue-200 text-[10px] sm:text-xs font-semibold rounded truncate" title="${escapeHtml(dl.series_name)}">${escapeHtml(dl.series_name)}</span>` : ''}
-          <button onclick="window.killDownload('${dl.id}')" class="w-full sm:w-auto sm:ml-2 px-3 py-2 sm:px-2 sm:py-0.5 bg-red-600/10 hover:bg-red-600 active:bg-red-700 text-red-500 hover:text-white border border-red-600/30 rounded text-xs sm:text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-1 min-h-[36px] sm:min-h-0" title="Smetti di scaricare"><svg class="w-4 h-4 sm:w-3 sm:h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>CANCELLA</button>
+          <button onclick="window.killDownload('${dl.id}')" class="w-full sm:w-auto sm:ml-2 px-3 py-2 sm:px-2 sm:py-0.5 bg-red-600/10 hover:bg-red-600 active:bg-red-700 text-red-500 hover:text-white border border-red-600/30 rounded text-xs sm:text-[10px] font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-1 min-h-[36px] sm:min-h-0" title="Stop downloading"><svg class="w-4 h-4 sm:w-3 sm:h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>CANCEL</button>
         </div>
         <h3 class="text-lg sm:text-xl lg:text-2xl font-bold text-white mb-1 text-center sm:text-left">${escapeHtml(dl.title)}</h3>
-        <p class="text-xs sm:text-sm text-gray-400 text-center sm:text-left">${escapeHtml(dl.status)} • ${timeStr} trascorsi</p>
+        <p class="text-xs sm:text-sm text-gray-400 text-center sm:text-left">${escapeHtml(dl.status)} • ${timeStr} elapsed</p>
         ${dl.path ? `<p class="text-[10px] sm:text-xs text-gray-400 mt-1 truncate opacity-60 text-center sm:text-left" title="${escapeHtml(dl.path)}">${escapeHtml(dl.path)}</p>` : ''}
       </div>
       <div class="mb-4">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-xs sm:text-sm font-semibold text-gray-300">Progresso</span>
+          <span class="text-xs sm:text-sm font-semibold text-gray-300">Progress</span>
           <span class="text-base sm:text-lg font-bold text-white font-mono">${dl.progress.toFixed(1)}%</span>
         </div>
         <div class="h-2 sm:h-2.5 w-full bg-gray-800 rounded-full overflow-hidden">
@@ -346,12 +346,12 @@ function generateDownloadCardHTML(dl) {
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
-        <div class="bg-black/30 rounded-lg p-3 sm:p-4"><p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider mb-1">Dimensione</p><p class="text-sm sm:text-base font-bold text-white font-mono truncate">${escapeHtml(dl.size)}</p></div>
-        <div class="bg-black/30 rounded-lg p-3 sm:p-4"><p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider mb-1">Velocità</p><p class="text-sm sm:text-base font-bold text-green-400 font-mono truncate">${escapeHtml(dl.speed)}</p></div>
+        <div class="bg-black/30 rounded-lg p-3 sm:p-4"><p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider mb-1">Size</p><p class="text-sm sm:text-base font-bold text-white font-mono truncate">${escapeHtml(dl.size)}</p></div>
+        <div class="bg-black/30 rounded-lg p-3 sm:p-4"><p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wider mb-1">Speed</p><p class="text-sm sm:text-base font-bold text-green-400 font-mono truncate">${escapeHtml(dl.speed)}</p></div>
       </div>
       ${hasTasks ? `<button onclick="window.toggleTasks('${dl.id}')" class="w-full sm:w-auto flex items-center justify-center sm:justify-start gap-2 text-xs sm:text-sm text-gray-400 hover:text-white transition-colors group py-2" id="btn-${dl.id}">
         <svg class="w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-        <span class="font-semibold">${isExpanded ? 'Nascondi' : 'Mostra'} dettagli (${Object.keys(dl.tasks).length})</span>
+        <span class="font-semibold">${isExpanded ? 'Hide' : 'Show'} details (${Object.keys(dl.tasks).length})</span>
       </button>` : ''}
     </div>
   </div>`;
@@ -359,7 +359,7 @@ function generateDownloadCardHTML(dl) {
   if (hasTasks) {
     const tasksArray = Object.entries(dl.tasks);
     html += `<div class="tasks-section mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-700 ${isExpanded ? '' : 'hidden'}" id="tasks-${dl.id}">
-      <h4 class="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 sm:mb-4">Flussi</h4>
+      <h4 class="text-xs sm:text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 sm:mb-4">Streams</h4>
       <div class="space-y-2 sm:space-y-3">`;
     
     tasksArray.forEach(([name, task]) => {
@@ -386,7 +386,7 @@ function renderHistory(history) {
   if (!body) return;
   
   if (history.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="px-6 py-12 text-center text-gray-500"><div class="flex flex-col items-center gap-3"><svg class="w-10 h-10 sm:w-12 sm:h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><span class="text-gray-500 font-medium">Nessun download completato</span></div></td></tr>`;
+    body.innerHTML = `<tr><td colspan="3" class="px-6 py-12 text-center text-gray-500"><div class="flex flex-col items-center gap-3"><svg class="w-10 h-10 sm:w-12 sm:h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg><span class="text-gray-500 font-medium">No completed downloads</span></div></td></tr>`;
     return;
   }
 
@@ -406,7 +406,7 @@ function renderHistory(history) {
           <div class="flex-1 min-w-0">
             <h4 class="text-xs sm:text-sm font-semibold text-white mb-0.5 sm:mb-1 truncate">${escapeHtml(item.title)}</h4>
             <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wide">${escapeHtml(item.site)}</p>
-            ${item.path ? `<p class="text-[10px] sm:text-xs text-gray-400 mt-1 truncate"><span class="text-gray-600">Percorso:</span> ${escapeHtml(item.path)}</p>` : ''}
+            ${item.path ? `<p class="text-[10px] sm:text-xs text-gray-400 mt-1 truncate"><span class="text-gray-600">Path:</span> ${escapeHtml(item.path)}</p>` : ''}
           </div>
         </div>
       </td>
@@ -453,8 +453,8 @@ function toggleTasks(id) {
     btn.querySelector('svg').classList.toggle('rotate-180');
     const taskCount = tasks.querySelectorAll('.bg-black\\/40').length;
     btn.querySelector('span').textContent = expandedRows.has(id) 
-      ? `Nascondi dettagli (${taskCount})`
-      : `Mostra dettagli (${taskCount})`;
+      ? `Hide details (${taskCount})`
+      : `Show details (${taskCount})`;
     tasks.classList.toggle('hidden');
   }
 }
@@ -484,7 +484,7 @@ async function killDownload(id) {
       console.log(`Download ${id} stopped`);
       updateProgress();
     } else {
-      alert('Impossibile fermare il download.');
+      alert('Unable to stop the download.');
     }
   } catch (error) {
     console.error('Error stopping download:', error);
@@ -492,7 +492,7 @@ async function killDownload(id) {
 }
 
 async function killAndClearQueue(id) {
-  if (!confirm('Terminare questo download e cancellare la coda?')) return;
+  if (!confirm('Stop this download and clear the queue?')) return;
   try {
     const response = await fetch(window.KILL_AND_CLEAR_QUEUE_URL, {
       method: 'POST',
@@ -503,7 +503,7 @@ async function killAndClearQueue(id) {
       console.log(`Download queue cleared`);
       updateProgress();
     } else {
-      alert('Impossibile svuotare la coda.');
+      alert('Unable to clear the queue.');
     }
   } catch (error) {
     console.error('Error clearing queue:', error);
@@ -511,7 +511,7 @@ async function killAndClearQueue(id) {
 }
 
 async function killSeriesQueue(id) {
-  if (!confirm('Cancellare tutti i download in attesa?')) return;
+  if (!confirm('Cancel all pending downloads?')) return;
   try {
     const response = await fetch(window.KILL_AND_CLEAR_QUEUE_URL, {
       method: 'POST',
@@ -521,7 +521,7 @@ async function killSeriesQueue(id) {
     if (response.ok) {
       updateProgress();
     } else {
-      alert('Impossibile cancellare la coda.');
+      alert('Unable to cancel the queue.');
     }
   } catch (error) {
     console.error('Error:', error);
@@ -529,7 +529,7 @@ async function killSeriesQueue(id) {
 }
 
 async function clearHistory() {
-  if (!confirm('Cancellare tutta la cronologia?')) return;
+  if (!confirm('Clear the entire history?')) return;
   try {
     const response = await fetch(window.CLEAR_HISTORY_URL, {
       method: 'POST',
@@ -538,7 +538,7 @@ async function clearHistory() {
     if (response.ok) {
       updateProgress();
     } else {
-      alert('Impossibile cancellare.');
+      alert('Unable to clear.');
     }
   } catch (error) {
     console.error('Error:', error);

@@ -2,13 +2,12 @@
 
 import asyncio
 import logging
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from VibraVid.utils.http_client import create_async_client, get_proxy_url
 from VibraVid.utils import config_manager
-from VibraVid.core.utils.language import resolve_locale
+from VibraVid.core.utils.language import resolve_locale, language_variants, extract_lang_and_flags, subtitle_flags
 from VibraVid.core.velora.bridge import run_download_plan
 from VibraVid.core.utils.codec import SUBTITLE_EXTENSIONS, AUDIO_EXTENSIONS
 from VibraVid.core.velora.util._subtitle_segments import get_subtitle_resolve_workers, download_and_merge_subtitle_segments
@@ -31,24 +30,7 @@ def is_valid_format(fmt: str, track_type: str) -> bool:
 
 def _extract_lang_and_flags(lang_raw: str, track_info: Dict = None) -> Tuple[str, set]:
     """Extract standard flags from a language string and return the clean base language and a set of flags."""
-    parts = re.split(r"[-_]", lang_raw)
-    flags = set()
-    clean = []
-
-    if track_info:
-        if track_info.get("forced"):
-            flags.add("forced")
-        if track_info.get("sdh"):
-            flags.add("sdh")
-        if track_info.get("cc"):
-            flags.add("cc")
-
-    for p in parts:
-        if p.lower() in ("forced", "cc", "sdh", "hi", "default"):
-            flags.add(p.lower())
-        else:
-            clean.append(p)
-    return "-".join(clean), flags
+    return extract_lang_and_flags(lang_raw, track_info)
 
 
 def build_ext_track_label(track: Dict, track_type: str, ext_override: str = None, plain: bool = False) -> str:
@@ -100,6 +82,31 @@ def build_ext_track_label(track: Dict, track_type: str, ext_override: str = None
     return f"{pfx} {ext_tag} {' '.join(parts)}"
 
 
+_NAME_REGION_OVERRIDES = {
+    "es": [(("latin", "419", "latino", "america", "américa"), "419"), (("europe", "castil", "spain", "españa", "espana"), "ES")],
+    "pt": [(("brazil", "brasil"), "BR"), (("portugal",), "PT")],
+    "zh": [(("simplified", "hans", "mainland"), "CN"), (("traditional", "hant", "taiwan", "hong kong"), "TW")],
+    "fr": [(("canad", "quebec", "québec"), "CA"), (("france",), "FR")],
+    "en": [(("british", "united kingdom", "(uk)", "(gb)"), "GB"), (("united states", "(us)"), "US")],
+    "pt-br": [], "pt-pt": [], "es-419": [], "es-es": [],  # placeholders; primary subtag is used
+}
+
+
+def _apply_name_region(base_locale: str, name: str) -> str:
+    """Refine the base locale using the track's name to determine a more specific region code if applicable."""
+    if not name:
+        return base_locale
+    primary = base_locale.split("-", 1)[0]
+    rules = _NAME_REGION_OVERRIDES.get(primary)
+    if not rules:
+        return base_locale
+    name_l = name.lower()
+    for needles, region in rules:
+        if any(n in name_l for n in needles):
+            return f"{primary}-{region}".lower()
+    return base_locale
+
+
 def normalize_sub_filename(lang_raw: str, track_info: Dict = None) -> Tuple[str, str]:
     """
     Return (base_lang, flag_suffix) for subtitle filename construction.
@@ -108,6 +115,8 @@ def normalize_sub_filename(lang_raw: str, track_info: Dict = None) -> Tuple[str,
     where flag_suffix uses underscores: ``_forced``, ``_cc``, ``_sdh``, or ``""``.
     """
     base_lang, parsed_flags = _extract_lang_and_flags(lang_raw, track_info)
+    base_lang = (resolve_locale(base_lang) or base_lang).lower()
+    base_lang = _apply_name_region(base_lang, (track_info or {}).get("name") or "")
 
     flags: List[str] = []
     if (track_info and track_info.get("forced")) or "forced" in parsed_flags:
@@ -123,12 +132,8 @@ def normalize_sub_filename(lang_raw: str, track_info: Dict = None) -> Tuple[str,
 
 def ext_from_url(url: str, fallback: str = "UNK") -> str:
     """Detect subtitle/audio format from URL path, ignoring query string."""
-    path = url.split("?")[0].lower()
-    for ext in ("webvtt", "vtt", "srt", "ass", "ssa", "ttml2", "ttml", "xml", "dfxp", "m4a", "aac", "mp3"):
-        if path.endswith(f".{ext}"):
-            return "vtt" if ext == "webvtt" else ext
-    
-    return fallback
+    from VibraVid.core.velora.util._stream_helpers import _ext_from_url_canon, _SUBTITLE_EXTENSIONS
+    return _ext_from_url_canon(url, _SUBTITLE_EXTENSIONS, default=fallback)
 
 
 async def resolve_url(client: Any, url: str, track_type: str) -> Tuple[str, str]:
@@ -195,9 +200,14 @@ async def _process_external_track(client: Any, headers: Dict, track: Dict, track
             return track_type, None
 
         # ── Build normalised filename ─────────────────────────────
-        base_lang, flag_suffix = normalize_sub_filename(lang_raw, track)
-        out_path = output_dir / f"{base_lang}{flag_suffix}.{fmt}"
-        task_key = track.get("_task_key", f"ext_{track_type}_{base_lang}{flag_suffix}")
+        assigned = track.get("_assigned_sub_base") if track_type == "subtitle" else None
+        if assigned:
+            stem = assigned
+        else:
+            _bl, _fs = normalize_sub_filename(lang_raw, track)
+            stem = f"{_bl}{_fs}"
+        out_path = output_dir / f"{stem}.{fmt}"
+        task_key = track.get("_task_key", f"ext_{track_type}_{stem}")
         new_label = build_ext_track_label(track, track_type, ext_override=fmt)
         display_label = build_ext_track_label(track, track_type, ext_override=fmt, plain=True)
 
@@ -245,6 +255,8 @@ async def _process_external_track(client: Any, headers: Dict, track: Dict, track
                 "language": f"{base_lang}{flag_suffix}",
                 "type": fmt,
                 "size": size,
+                **subtitle_flags(lang_raw, track),
+                **language_variants(base_lang),
             }
             logger.info(f"Downloaded {track_type} {lang_raw}: {size} bytes -> {out_path.name}")
             return track_type, entry
@@ -287,6 +299,17 @@ async def download_external_tracks_with_progress(headers: Dict, external_subtitl
         [(sub, "subtitle") for sub in external_subtitles if sub.get("_selected", True)]
         + [(aud, "audio") for aud in external_audios if aud.get("_selected", True)]
     )
+
+    _seen_bases: Dict[str, int] = {}
+    for _track, _ttype in all_tasks:
+        if _ttype != "subtitle":
+            continue
+        _base, _flag = normalize_sub_filename((_track.get("language") or "unknown").strip(), _track)
+        _stem = f"{_base}{_flag}"
+        _count = _seen_bases.get(_stem, 0) + 1
+        _seen_bases[_stem] = _count
+        _track["_assigned_sub_base"] = _stem if _count == 1 else f"{_stem}_{_count}"
+
     for subs in external_subtitles:
         logger.info(f"Add external subtitle track: {subs}")
     for auds in external_audios:

@@ -1,0 +1,48 @@
+:root[data-theme="default-light"] {
+	/* --- Chrome --- */
+	--vv-bg-page: #f3f4f6;
+
+	--vv-text-primary: #0a0a0a;
+	--vv-text-secondary: #374151;
+	--vv-text-muted: #6b7280;
+	--vv-text-faint: #9ca3af;
+
+	--vv-border: #e5e7eb;
+	--vv-hover-bg: rgba(0, 0, 0, 0.06);
+
+	--vv-nav-bg: rgba(255, 255, 255, 0.85);
+	--vv-nav-bg-scrolled: rgba(255, 255, 255, 0.98);
+	--vv-nav-bg-mobile: rgba(255, 255, 255, 0.98);
+	--vv-nav-blur: 12px;
+
+	--vv-scrollbar-track: #f1f1f1;
+	--vv-scrollbar-thumb: #cbd5e1;
+	--vv-scrollbar-thumb-hover: #94a3b8;
+
+	--vv-theme-color: #f3f4f6;
+
+	/* --- Superfici (remap classi Tailwind) --- */
+	--vv-surf-0: #ffffff; /* bg-black solido */
+	--vv-scrim-rgb: 255 255 255; /* bg-black/NN */
+	--vv-surf-1: #ffffff; /* bg-gray-900 / bg-zinc-900 (card) */
+	--vv-surf-1-rgb: 255 255 255;
+	--vv-surf-2: #f3f4f6; /* bg-gray-800 */
+	--vv-surf-2-rgb: 243 244 246;
+	--vv-surf-3: #e5e7eb; /* bg-gray-700 */
+	--vv-surf-3-rgb: 229 231 235;
+	--vv-surf-4: #d1d5db; /* bg-gray-600 */
+	--vv-surf-5: #9ca3af; /* bg-gray-500 */
+	--vv-surf-5-rgb: 156 163 175;
+	--vv-surf-white: #e9e9ee; /* bg-white -> chip chiaro visibile su pagina chiara */
+	--vv-surf-chip: #e0e0e6; /* bg-gray-200 */
+
+	--vv-overlay-rgb: 0 0 0; /* bg-white/NN e border-white/NN -> overlay scuro */
+
+	--vv-border-1: #e5e7eb; /* border-gray-800 */
+	--vv-border-2: #d1d5db; /* border-gray-700/600 */
+
+	--vv-grad-from: #ffffff;
+	--vv-grad-to: #f3f4f6;
+
+	--vv-card-blur: 0px; /* nessun blur nel tema solido */
+}
